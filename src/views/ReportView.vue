@@ -1,10 +1,11 @@
 <script setup>
-import { ref, onMounted, nextTick, onBeforeUnmount } from 'vue';
+import { ref, onMounted, nextTick, onBeforeUnmount, computed } from 'vue';
 import { useRoute } from 'vue-router';
 import axios from 'axios';
 import * as echarts from 'echarts';
 import { marked } from 'marked';
 
+// -------------------- 状态定义 --------------------
 const route = useRoute();
 const username = route.params.username;
 
@@ -16,9 +17,8 @@ const renderedSummary = ref('');
 let chartInstance = null;
 const chartRef = ref(null);
 
-// ----------------------------------------
-// 1. 获取 AI 分析数据
-// ----------------------------------------
+// -------------------- 核心逻辑 --------------------
+
 const fetchAnalysis = async () => {
   loading.value = true;
   errorMsg.value = '';
@@ -31,11 +31,10 @@ const fetchAnalysis = async () => {
     }
 
     reportData.value = res.data;
-    // 使用 marked 解析 Markdown
     renderedSummary.value = marked.parse(res.data.data.summary);
     
     await nextTick();
-    // 稍微延时确保布局稳定后再渲染图表
+    // 给予 DOM 渲染缓冲时间，避免图表尺寸计算错误
     setTimeout(() => {
         initRadarChart(res.data.data.radar_scores);
     }, 200);
@@ -48,9 +47,8 @@ const fetchAnalysis = async () => {
   }
 };
 
-// ----------------------------------------
-// 2. 绘制雷达图
-// ----------------------------------------
+// -------------------- 图表逻辑 --------------------
+
 const initRadarChart = (scores) => {
   if (!chartRef.value) return;
   if (chartInstance) chartInstance.dispose();
@@ -58,11 +56,9 @@ const initRadarChart = (scores) => {
   chartInstance = echarts.init(chartRef.value);
 
   const option = {
-    // title: { text: '五维能力模型', left: 'center', top: 10, textStyle: { color: '#888', fontSize: 14 } },
     tooltip: { trigger: 'item' },
     radar: {
-      radius: '70%',
-      center: ['50%', '50%'], // 居中
+      radius: '65%',
       indicator: [
         { name: '代码质量', max: 100 },
         { name: '活跃度', max: 100 },
@@ -71,29 +67,28 @@ const initRadarChart = (scores) => {
         { name: '技术广度', max: 100 }
       ],
       axisName: {
-        color: '#555',
-        fontSize: 13,
-        fontWeight: 'bold',
-        backgroundColor: '#f4f4f4',
-        borderRadius: 4,
-        padding: [3, 5]
+        color: '#666',
+        fontWeight: 'bold'
       },
       splitArea: {
-          areaStyle: {
-              color: ['#ffffff', '#f9faff']
-          }
-      },
-      axisLine: { lineStyle: { color: '#e0e6f1' } },
-      splitLine: { lineStyle: { color: '#e0e6f1' } }
+        areaStyle: {
+          color: ['#f8f9fa', '#ffffff'],
+          shadowColor: 'rgba(0, 0, 0, 0.1)',
+          shadowBlur: 10
+        }
+      }
     },
     series: [{
       name: '能力评分',
       type: 'radar',
-      symbol: 'circle',
-      symbolSize: 8,
-      itemStyle: { color: '#42b983', borderColor: '#fff', borderWidth: 2, shadowColor: 'rgba(66, 185, 131, 0.5)', shadowBlur: 10 },
-      lineStyle: { width: 3, color: '#42b983' },
-      areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(66, 185, 131, 0.6)' }, { offset: 1, color: 'rgba(66, 185, 131, 0.1)' }]) },
+      areaStyle: {
+        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+          { offset: 0, color: 'rgba(24, 103, 192, 0.5)' }, // Vuetify Primary Color
+          { offset: 1, color: 'rgba(24, 103, 192, 0.1)' }
+        ])
+      },
+      lineStyle: { color: '#1867C0', width: 2 },
+      itemStyle: { color: '#1867C0' },
       data: [{
           value: [scores.code_quality, scores.activity, scores.documentation, scores.influence, scores.tech_breadth],
           name: username
@@ -103,229 +98,366 @@ const initRadarChart = (scores) => {
   chartInstance.setOption(option);
 };
 
-// 监听窗口大小变化
-const handleResize = () => {
-    if (chartInstance) chartInstance.resize();
-};
+const handleResize = () => { if (chartInstance) chartInstance.resize(); };
+
 onMounted(() => {
   window.addEventListener('resize', handleResize);
   if (username) fetchAnalysis(); else { errorMsg.value = '未指定用户。'; loading.value = false; }
 });
+
 onBeforeUnmount(() => {
     window.removeEventListener('resize', handleResize);
     if (chartInstance) chartInstance.dispose();
 });
 
-// 辅助函数
-const getScoreClass = (score) => { if (score >= 80) return 's'; if (score >= 60) return 'a'; if (score >= 40) return 'b'; return 'c'; };
-const getScoreGrade = (score) => { if (score >= 80) return '卓越 (S)'; if (score >= 60) return '优秀 (A)'; if (score >= 40) return '良好 (B)'; return '待提高 (C)'; };
-const getChineseKey = (key) => { const map = { 'code_quality': '代码质量', 'activity': '活跃度', 'documentation': '文档规范', 'influence': '影响力', 'tech_breadth': '技术广度' }; return map[key] || key; };
+// -------------------- 辅助函数 & 计算属性 --------------------
+
+// 分数对应的 Vuetify 颜色
+const getScoreColor = (score) => {
+    if (score >= 90) return 'deep-purple-accent-3';
+    if (score >= 80) return 'green-darken-1';
+    if (score >= 60) return 'blue-darken-1';
+    if (score >= 40) return 'orange-darken-1';
+    return 'red-darken-1';
+};
+
+// 状态标签对应的 Vuetify 颜色和图标
+const getStatusConfig = (status) => {
+    switch (status) {
+        // 活跃开发
+        case 'Active': return { 
+            color: 'teal-lighten-1', 
+            textColor: 'teal-darken-5', 
+            icon: 'mdi-fire', 
+            text: '活跃开发' 
+        };
+        // 维护中
+        case 'Maintenance': return { 
+            color: 'amber-lighten-1', 
+            textColor: 'amber-darken-5', 
+            icon: 'mdi-wrench', 
+            text: '维护中' 
+        };
+        // 已归档/废弃
+        default: return { 
+            color: 'grey-lighten-1', 
+            textColor: 'grey-darken-5', 
+            icon: 'mdi-archive', 
+            text: '已归档/废弃' 
+        };
+    }
+};
+
+const getChineseKey = (key) => { 
+    const map = { 'code_quality': '代码质量', 'activity': '活跃度', 'documentation': '文档规范', 'influence': '影响力', 'tech_breadth': '技术广度' }; 
+    return map[key] || key; 
+};
+
+// -------------------- [新增] 分页与跳转逻辑 --------------------
+
+const repoPage = ref(1); // 当前页码
+const itemsPerPage = 9;  // 每页显示 9 个 (3行 x 3列)
+
+// 计算当前页应当显示的仓库列表
+const paginatedRepos = computed(() => {
+    if (!reportData.value || !reportData.value.data.repositories) return [];
+    
+    const start = (repoPage.value - 1) * itemsPerPage;
+    const end = start + itemsPerPage;
+    return reportData.value.data.repositories.slice(start, end);
+});
+
+// 计算总页数
+const totalPages = computed(() => {
+    if (!reportData.value || !reportData.value.data.repositories) return 0;
+    return Math.ceil(reportData.value.data.repositories.length / itemsPerPage);
+});
+
+// 获取仓库跳转链接
+const getRepoUrl = (repoName) => {
+    const user = reportData.value?.username || username;
+    return `https://github.com/${user}/${repoName}`;
+};
+
 </script>
 
 <template>
-  <div class="report-container">
-    <div v-if="loading" class="loading-state"><div class="spinner"></div><p>AI 正在进行深度分析...</p></div>
-    <div v-else-if="errorMsg" class="error-state"><h3>分析失败</h3><p>{{ errorMsg }}</p><button @click="fetchAnalysis">重试</button></div>
+  <v-app class="bg-grey-lighten-4">
+    <v-main>
+      <v-container class="py-10" style="max-width: 1280px;">
+        
+        <v-overlay :model-value="loading" class="align-center justify-center" persistent>
+          <v-card class="pa-5 text-center rounded-xl" elevation="3">
+            <v-progress-circular indeterminate color="primary" size="64" class="mb-3"></v-progress-circular>
+            <div class="text-subtitle-1 font-weight-bold text-grey-darken-2">
+              AI 正在深度分析所有仓库及代码...
+            </div>
+            <div class="text-caption text-grey">这可能需要 30-60 秒，请稍候</div>
+          </v-card>
+        </v-overlay>
 
-    <div v-else class="dashboard-content">
-      
-      <div class="top-banner-card card">
-          <div class="banner-left-section">
-              <div class="profile-block">
-                  <img :src="reportData.avatar_url || 'https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png'" class="avatar-big" alt="avatar">
-                  <div class="profile-text">
-                      <h1 class="username">{{ reportData.username || username }}</h1>
-                      <span class="report-badge">GitHub 深度评估报告</span>
-                  </div>
-              </div>
-              
-              <div class="tech-stack-block">
-                  <div class="tech-label">🛠️ 技术栈指纹:</div>
-                  <div class="tech-tags-row">
-                      <span v-for="tech in reportData.data.tech_stack" :key="tech" class="tech-tag-header">
-                        {{ tech }}
-                      </span>
-                       <span v-if="!reportData.data.tech_stack || reportData.data.tech_stack.length === 0" class="no-tech">未检测到主要技术栈</span>
-                  </div>
-              </div>
-          </div>
+        <v-alert
+          v-if="errorMsg"
+          type="error"
+          variant="tonal"
+          title="分析失败"
+          :text="errorMsg"
+          class="mb-6 rounded-xl"
+        >
+            <template v-slot:append>
+                <v-btn variant="outlined" color="error" @click="fetchAnalysis">重试</v-btn>
+            </template>
+        </v-alert>
 
-          <div class="banner-right-section score-box">
-              <div class="score-circle-lg" :class="'score-' + getScoreClass(reportData.data.overall_score)">
-                {{ reportData.data.overall_score }}
-              </div>
-              <div class="score-grade-lg">{{ getScoreGrade(reportData.data.overall_score) }}</div>
-          </div>
-      </div>
-
-      <div class="main-content-grid">
+        <div v-if="reportData && !loading" class="animate__animated animate__fadeIn">
           
-          <div class="chart-panel card equal-height-item">
-              <h3 class="panel-title">五维能力模型</h3>
-              <div class="chart-container-wrapper">
-                 <div ref="chartRef" class="radar-chart-fixed"></div>
-              </div>
-              <div class="chart-legend-row">
-                  <div v-for="(score, key) in reportData.data.radar_scores" :key="key" class="legend-metric">
-                      <span class="metric-label">{{ getChineseKey(key) }}</span>
-                      <span class="metric-value" :class="'val-' + getScoreClass(score)">{{ score }}</span>
+          <v-card class="mb-6 rounded-xl border-none" elevation="2">
+             <div class="banner-bg"></div>
+            
+            <v-card-text class="d-flex flex-column flex-md-row align-center pa-6 position-relative">
+              
+              <div class="d-flex flex-column flex-sm-row align-center flex-grow-1 gap-4 text-center text-sm-left">
+                <v-avatar size="100" class="elevation-3 border-2 border-white">
+                  <v-img :src="reportData.avatar_url" alt="Avatar"></v-img>
+                </v-avatar>
+                
+                <div>
+                  <div class="text-h4 font-weight-black text-blue-grey-darken-4 mb-1">
+                    {{ reportData.username }}
                   </div>
+                  <v-chip color="primary" variant="flat" size="small" class="font-weight-bold mb-3">
+                    GitHub 深度评估报告
+                  </v-chip>
+                  
+                  <div class="d-flex flex-wrap justify-center justify-sm-start gap-2 mt-1">
+                    <span class="text-subtitle-2 text-grey-darken-1 mr-2 pt-1">🛠️ 技术栈指纹:</span>
+                    <v-chip 
+                        v-for="tech in reportData.data.tech_stack" 
+                        :key="tech"
+                        size="small"
+                        variant="tonal"
+                        color="indigo"
+                        class="font-weight-medium"
+                    >
+                        {{ tech }}
+                    </v-chip>
+                  </div>
+                </div>
               </div>
+
+              <div class="d-flex flex-column align-center mt-4 mt-md-0 ml-md-6 pl-md-6 border-left-md">
+                <v-progress-circular
+                  :model-value="reportData.data.overall_score"
+                  :color="getScoreColor(reportData.data.overall_score)"
+                  size="100"
+                  width="8"
+                  class="text-h4 font-weight-black"
+                >
+                  {{ reportData.data.overall_score }}
+                </v-progress-circular>
+                <div class="text-subtitle-1 font-weight-bold mt-2 text-grey-darken-2">综合评分</div>
+              </div>
+            </v-card-text>
+          </v-card>
+
+          <v-row>
+            <v-col cols="12" md="5" lg="4">
+              <v-card class="h-100 rounded-xl d-flex flex-column" elevation="2">
+                <v-card-title class="text-h6 font-weight-bold pa-4 pb-0 text-blue-grey-darken-3">
+                  <v-icon icon="mdi-radar" color="primary" class="mr-2"></v-icon>
+                  五维能力模型
+                </v-card-title>
+                
+                <v-card-text class="flex-grow-1 d-flex align-center justify-center pa-0 position-relative">
+                   <div ref="chartRef" class="chart-container"></div>
+                </v-card-text>
+
+                <v-divider></v-divider>
+                
+                <div class="d-flex justify-space-around pa-4 bg-grey-lighten-5">
+                   <div v-for="(score, key) in reportData.data.radar_scores" :key="key" class="text-center">
+                       <div class="text-caption text-grey-darken-1">{{ getChineseKey(key) }}</div>
+                       <div class="text-subtitle-2 font-weight-black" :class="'text-' + getScoreColor(score)">
+                           {{ score }}
+                       </div>
+                   </div>
+                </div>
+              </v-card>
+            </v-col>
+
+            <v-col cols="12" md="7" lg="8">
+              <v-card class="h-100 rounded-xl" elevation="2">
+                <v-card-title class="text-h6 font-weight-bold pa-4 text-blue-grey-darken-3 gradient-text-header">
+                  <v-icon icon="mdi-robot" class="mr-2"></v-icon>
+                  AI 深度评语
+                </v-card-title>
+                <v-divider></v-divider>
+                <v-card-text class="pa-6">
+                  <div class="markdown-body" v-html="renderedSummary"></div>
+                </v-card-text>
+              </v-card>
+            </v-col>
+          </v-row>
+
+          <div class="text-h5 font-weight-bold mt-8 mb-4 text-blue-grey-darken-3 d-flex align-center">
+             <v-icon icon="mdi-source-repository" class="mr-2" color="blue-grey"></v-icon>
+             仓库全景 & 状态分析
           </div>
 
-          <div class="analysis-panel card equal-height-item dazzling-card">
-              <h3 class="panel-title dazzling-title">🤖 AI 深度评语</h3>
-              <div class="markdown-body dazzling-content" v-html="renderedSummary"></div>
+          <div v-if="reportData.data.repositories && reportData.data.repositories.length">
+            <v-row>
+                <v-col 
+                    v-for="repo in paginatedRepos" 
+                    :key="repo.name"
+                    cols="12" sm="6" lg="4"
+                >
+                <v-card class="rounded-lg h-100 transition-swing" hover elevation="1" border>
+                    <v-card-item>
+                        <template v-slot:title>
+                            <div class="d-flex justify-space-between align-start">
+                                <a 
+                                    :href="getRepoUrl(repo.name)" 
+                                    target="_blank" 
+                                    class="text-decoration-none repo-link"
+                                >
+                                    <span class="text-truncate font-weight-bold mr-2" style="max-width: 100%;">
+                                        {{ repo.name }}
+                                        <v-icon icon="mdi-open-in-new" size="x-small" class="ml-1 opacity-50"></v-icon>
+                                    </span>
+                                </a>
+                                
+                                <v-chip
+                                    :color="getStatusConfig(repo.status).color"
+                                    :text-color="getStatusConfig(repo.status).textColor"
+                                    size="x-small"
+                                    class="font-weight-bold flex-shrink-0"
+                                    label
+                                >
+                                    {{ getStatusConfig(repo.status).text }}
+                                </v-chip>
+                            </div>
+                        </template>
+                    </v-card-item>
+
+                    <v-card-text class="pt-0 text-body-2 text-grey-darken-2" style="line-height: 1.6;">
+                    {{ repo.ai_summary }}
+                    </v-card-text>
+                </v-card>
+                </v-col>
+            </v-row>
+
+            <div class="d-flex justify-center mt-6" v-if="totalPages > 1">
+                <v-pagination
+                    v-model="repoPage"
+                    :length="totalPages"
+                    :total-visible="5"
+                    color="primary"
+                    rounded="circle"
+                ></v-pagination>
+            </div>
           </div>
+          
+          <v-sheet v-else class="text-center pa-10 rounded-xl bg-transparent" border dashed>
+              <div class="text-grey text-h6">暂无仓库数据</div>
+          </v-sheet>
 
-      </div>
-
-    </div>
-  </div>
+        </div>
+      </v-container>
+    </v-main>
+  </v-app>
 </template>
 
 <style scoped>
-/* ---------------- 全局容器 & 卡片基础 ---------------- */
-.report-container {
-  max-width: 1300px; margin: 0 auto; padding: 30px 20px;
-  background-color: #f0f2f5; min-height: 100vh; font-family: 'Inter', 'Helvetica Neue', Helvetica, Arial, sans-serif; color: #2c3e50;
+/* ---------------- 基础样式调整 ---------------- */
+.banner-bg {
+    position: absolute;
+    top: 0; left: 0; right: 0; height: 100%;
+    background: linear-gradient(135deg, #fdfbfb 0%, #ebedee 100%);
+    opacity: 0.5;
+    z-index: 0;
 }
-.card {
-  background: #fff; border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.06);
-  border: 1px solid rgba(255,255,255,0.8); /* 轻微边框 */
+.border-2 { border: 2px solid white !important; }
+.gap-2 { gap: 8px; }
+.gap-4 { gap: 16px; }
+
+/* ---------------- 仓库链接样式 ---------------- */
+.repo-link {
+    color: #1565C0; /* Vuetify Primary Blue */
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    max-width: 65%; /* 防止过长挤压后面的 Tag */
 }
-.panel-title {
-    margin: 0 0 20px 0; font-size: 1.25rem; font-weight: 700; color: #34495e;
-    padding-bottom: 12px; border-bottom: 2px solid #f5f7fa;
+.repo-link:hover {
+    color: #0D47A1;
+    text-decoration: underline !important;
 }
 
-/* ---------------- 区域 1：顶部综合信息栏 ---------------- */
-.top-banner-card {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 25px 35px; margin-bottom: 25px;
-    background: linear-gradient(to right, #ffffff, #fbfcfe);
-}
-.banner-left-section { display: flex; flex-direction: column; gap: 20px; flex: 1; }
-
-/* 用户信息块 */
-.profile-block { display: flex; align-items: center; gap: 20px; }
-.avatar-big { 
-    width: 72px; height: 72px; border-radius: 50%; border: 3px solid #fff; 
-    box-shadow: 0 4px 12px rgba(66, 185, 131, 0.2); object-fit: cover;
-}
-.profile-text .username { margin: 0; font-size: 1.8rem; font-weight: 800; color: #2c3e50; line-height: 1.2; }
-.report-badge {
-    display: inline-block; background: #e3f2fd; color: #1565c0; font-size: 0.8rem;
-    padding: 3px 10px; border-radius: 12px; margin-top: 5px; font-weight: 600;
+/* ---------------- 图表容器 ---------------- */
+.chart-container {
+    width: 100%;
+    height: 350px;
 }
 
-/* 技术栈块 (横向排列) */
-.tech-stack-block { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
-.tech-label { font-weight: 600; color: #7f8c8d; font-size: 0.95rem; }
-.tech-tags-row { display: flex; flex-wrap: wrap; gap: 8px; }
-.tech-tag-header {
-    background: linear-gradient(135deg, #f5f7fa, #e4e7eb); color: #57606f;
-    padding: 5px 14px; border-radius: 20px; font-size: 0.85rem; font-weight: 600;
-    border: 1px solid #dce1e6; box-shadow: 0 2px 5px rgba(0,0,0,0.03);
+/* ---------------- 炫彩标题 (可选) ---------------- */
+.gradient-text-header {
+    background: linear-gradient(45deg, #2c3e50, #3498db);
+    -webkit-background-clip: text;
+    background-clip: text;
 }
-.no-tech { color: #aaa; font-size: 0.9rem; font-style: italic; }
 
-/* 右侧评分块 */
-.score-box { display: flex; flex-direction: column; align-items: center; justify-content: center; padding-left: 40px; border-left: 2px solid #f0f0f0; }
-.score-circle-lg {
-    width: 88px; height: 88px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
-    font-size: 2.8rem; font-weight: 900; color: white;
-    box-shadow: 0 6px 16px rgba(0,0,0,0.15); text-shadow: 1px 1px 2px rgba(0,0,0,0.2);
+/* ---------------- Markdown 美化 (保持原有风格但适配Vuetify) ---------------- */
+.markdown-body {
+    font-family: 'Roboto', sans-serif;
+    line-height: 1.7;
+    color: #424242;
 }
-.score-grade-lg { margin-top: 8px; font-size: 1.2rem; font-weight: 700; color: #2c3e50; }
-/* 评分颜色梯度 */
-.score-s { background: linear-gradient(135deg, #42b983, #249c68); }
-.score-a { background: linear-gradient(135deg, #3498db, #1f78b4); }
-.score-b { background: linear-gradient(135deg, #f1c40f, #d4ac0d); }
-.score-c { background: linear-gradient(135deg, #e74c3c, #c0392b); }
 
-
-/* ---------------- 区域 2：主体网格 (等高关键) ---------------- */
-.main-content-grid {
-    display: grid;
-    /* 左侧固定宽度或比例，右侧自适应 */
-    grid-template-columns: 42% 1fr; 
-    gap: 25px;
-    /* 关键属性：让网格项在行方向上拉伸至相同高度 */
-    align-items: stretch; 
-}
-/* 确保卡片自身也占满高度 */
-.equal-height-item {
+/* 使用 :deep() 穿透 v-html 内容 */
+.markdown-body :deep(h3) {
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin-top: 1.5rem;
+    margin-bottom: 0.8rem;
+    color: #1565C0; /* Vuetify Primary Blue */
     display: flex;
-    flex-direction: column;
-    height: 100%; /* 撑满 Grid 分配的高度 */
+    align-items: center;
+}
+.markdown-body :deep(h3)::before {
+    content: '';
+    display: inline-block;
+    width: 4px;
+    height: 16px;
+    background-color: #1565C0;
+    margin-right: 8px;
+    border-radius: 2px;
 }
 
-
-/* --- 左侧雷达图卡片调整 --- */
-.chart-panel { padding: 25px; }
-.chart-container-wrapper { flex: 1; /* 占据剩余空间 */ display: flex; align-items: center; justify-content: center; }
-.radar-chart-fixed { width: 100%; height: 400px; /* 保持固定高度供 echarts 绘图 */ }
-
-.chart-legend-row { 
-    display: flex; justify-content: space-around; margin-top: 20px; 
-    padding-top: 15px; border-top: 1px solid #f0f2f5; 
-}
-.legend-metric { display: flex; flex-direction: column; align-items: center; }
-.metric-label { font-size: 0.85rem; color: #7f8c8d; margin-bottom: 4px; }
-.metric-value { font-size: 1.2rem; font-weight: 800; }
-.val-s, .val-a { color: #42b983; }
-.val-b { color: #f1c40f; }
-.val-c { color: #e74c3c; }
-
-
-/* --- 右侧 AI 评语卡片 (炫彩美化) --- */
-.dazzling-card {
-    padding: 30px;
-    position: relative;
-    /* 炫彩边框效果 (使用伪元素实现渐变边框) */
-    background: #fff;
-    background-clip: padding-box;
-    border: 2px solid transparent;
-}
-.dazzling-card::before {
-    content: ''; position: absolute; top: -2px; bottom: -2px; left: -2px; right: -2px;
-    background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%); /* 比较清新的炫彩渐变 */
-    z-index: -1; border-radius: 18px; /* 比卡片圆角大一点 */
+.markdown-body :deep(ul) {
+    padding-left: 1.2rem;
+    margin-bottom: 1rem;
 }
 
-/* 标题炫彩字 */
-.dazzling-title {
-    border-bottom: none; padding-bottom: 0;
-    background: linear-gradient(to right, #30cfd0 0%, #330867 100%);
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-    font-size: 1.5rem;
+.markdown-body :deep(li) {
+    margin-bottom: 0.4rem;
 }
 
-/* Markdown 内容美化 */
-.dazzling-content {
-    flex: 1; /* 撑满高度 */
-    font-family: 'Georgia', 'Times New Roman', serif; /* 使用衬线体增加高级感，或者用更现代的无衬线体 */
-    font-size: 1.05rem; line-height: 1.8; color: #444;
-    padding: 10px;
-    background: rgba(250, 250, 252, 0.5); /* 微妙的背景区分 */
-    border-radius: 8px;
-}
-/* Markdown 内部样式穿透 */
-.dazzling-content :deep(p) { margin-bottom: 1.2em; text-align: justify; }
-.dazzling-content :deep(strong) { color: #2c3e50; font-weight: 700; }
-
-
-/* ---------------- 响应式适配 ---------------- */
-@media (max-width: 1024px) {
-    .top-banner-card { flex-direction: column; align-items: flex-start; gap: 20px; }
-    .score-box { border-left: none; border-top: 2px solid #f0f0f0; padding-left: 0; padding-top: 20px; width: 100%; align-items: flex-start; flex-direction: row; gap: 20px; }
-    .main-content-grid { grid-template-columns: 1fr; /* 变为单列 */ }
-    .radar-chart-fixed { height: 350px; }
+.markdown-body :deep(strong) {
+    color: #263238;
+    background: rgba(0,0,0,0.05);
+    padding: 0 4px;
+    border-radius: 4px;
 }
 
-/* 加载和错误状态 (省略详细样式，保持基础即可) */
-.loading-state, .error-state { text-align: center; padding: 50px; }
-.spinner { /* ...保持原有... */ width: 40px; height: 40px; border: 4px solid #eee; border-top-color: #42b983; border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 15px;}
-@keyframes spin { to { transform: rotate(360deg); } }
+.markdown-body :deep(p) {
+    margin-bottom: 1rem;
+    text-align: justify;
+}
+
+/* ---------------- 响应式辅助 ---------------- */
+.border-left-md {
+    @media (min-width: 960px) {
+        border-left: 1px solid rgba(0,0,0,0.12);
+    }
+}
 </style>
