@@ -1,15 +1,18 @@
 <script setup>
 import { ref, onMounted, nextTick, onBeforeUnmount, computed } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import axios from 'axios';
 import * as echarts from 'echarts';
 import { marked } from 'marked';
 
 // -------------------- 状态定义 --------------------
 const route = useRoute();
+const router = useRouter(); // 引入 router 用于返回操作
 const username = route.params.username;
 
 const loading = ref(true);
+const downloading = ref(false); // 下载状态
+const previewing = ref(false); // 新增：预览状态
 const errorMsg = ref('');
 const reportData = ref(null);
 const renderedSummary = ref('');
@@ -19,6 +22,7 @@ const chartRef = ref(null);
 
 // -------------------- 核心逻辑 --------------------
 
+// 获取 AI 分析数据
 const fetchAnalysis = async () => {
   loading.value = true;
   errorMsg.value = '';
@@ -31,10 +35,10 @@ const fetchAnalysis = async () => {
     }
 
     reportData.value = res.data;
+    // 渲染中文摘要 (summary 字段)
     renderedSummary.value = marked.parse(res.data.data.summary);
     
     await nextTick();
-    // 给予 DOM 渲染缓冲时间，避免图表尺寸计算错误
     setTimeout(() => {
         initRadarChart(res.data.data.radar_scores);
     }, 200);
@@ -45,6 +49,55 @@ const fetchAnalysis = async () => {
   } finally {
     loading.value = false;
   }
+};
+
+// 返回上一页
+const goBack = () => {
+    router.back();
+};
+
+// 新增：在线预览简历 (全英文)
+const previewResume = () => {
+    if (!username) return;
+    previewing.value = true;
+    
+    // 直接打开新窗口访问 PDF 预览链接
+    // 后端需支持 ?mode=inline 参数来设置 Content-Disposition: inline
+    const url = `/api/ai/resume/${username}?mode=inline`;
+    window.open(url, '_blank');
+    
+    // 稍微延迟一下状态恢复，仅为了 UI 交互
+    setTimeout(() => {
+        previewing.value = false;
+    }, 1000);
+};
+
+// 修改：下载简历 PDF (全英文)
+const downloadResume = async () => {
+    downloading.value = true;
+    try {
+        // 请求后端生成 PDF，带上 mode=attachment 强制下载
+        const res = await axios.get(`/api/ai/resume/${username}?mode=attachment`, {
+            responseType: 'blob' 
+        });
+        
+        // 创建 Blob URL 并触发下载
+        const url = window.URL.createObjectURL(new Blob([res.data]));
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `${username}_Resume_EN.pdf`); // 下载文件名设为英文
+        document.body.appendChild(link);
+        link.click();
+        
+        // 清理资源
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+    } catch (err) {
+        console.error(err);
+        errorMsg.value = '简历生成失败，请检查后端日志或稍后重试';
+    } finally {
+        downloading.value = false;
+    }
 };
 
 // -------------------- 图表逻辑 --------------------
@@ -83,7 +136,7 @@ const initRadarChart = (scores) => {
       type: 'radar',
       areaStyle: {
         color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-          { offset: 0, color: 'rgba(24, 103, 192, 0.5)' }, // Vuetify Primary Color
+          { offset: 0, color: 'rgba(24, 103, 192, 0.5)' },
           { offset: 1, color: 'rgba(24, 103, 192, 0.1)' }
         ])
       },
@@ -112,7 +165,6 @@ onBeforeUnmount(() => {
 
 // -------------------- 辅助函数 & 计算属性 --------------------
 
-// 分数对应的 Vuetify 颜色
 const getScoreColor = (score) => {
     if (score >= 90) return 'deep-purple-accent-3';
     if (score >= 80) return 'green-darken-1';
@@ -121,24 +173,20 @@ const getScoreColor = (score) => {
     return 'red-darken-1';
 };
 
-// 状态标签对应的 Vuetify 颜色和图标
 const getStatusConfig = (status) => {
     switch (status) {
-        // 活跃开发
         case 'Active': return { 
             color: 'teal-lighten-1', 
             textColor: 'teal-darken-5', 
             icon: 'mdi-fire', 
             text: '活跃开发' 
         };
-        // 维护中
         case 'Maintenance': return { 
             color: 'amber-lighten-1', 
             textColor: 'amber-darken-5', 
             icon: 'mdi-wrench', 
             text: '维护中' 
         };
-        // 已归档/废弃
         default: return { 
             color: 'grey-lighten-1', 
             textColor: 'grey-darken-5', 
@@ -153,12 +201,11 @@ const getChineseKey = (key) => {
     return map[key] || key; 
 };
 
-// -------------------- [新增] 分页与跳转逻辑 --------------------
+// -------------------- 分页与跳转逻辑 --------------------
 
-const repoPage = ref(1); // 当前页码
-const itemsPerPage = 9;  // 每页显示 9 个 (3行 x 3列)
+const repoPage = ref(1);
+const itemsPerPage = 9;
 
-// 计算当前页应当显示的仓库列表
 const paginatedRepos = computed(() => {
     if (!reportData.value || !reportData.value.data.repositories) return [];
     
@@ -167,13 +214,11 @@ const paginatedRepos = computed(() => {
     return reportData.value.data.repositories.slice(start, end);
 });
 
-// 计算总页数
 const totalPages = computed(() => {
     if (!reportData.value || !reportData.value.data.repositories) return 0;
     return Math.ceil(reportData.value.data.repositories.length / itemsPerPage);
 });
 
-// 获取仓库跳转链接
 const getRepoUrl = (repoName) => {
     const user = reportData.value?.username || username;
     return `https://github.com/${user}/${repoName}`;
@@ -221,7 +266,7 @@ const getRepoUrl = (repoName) => {
                   <v-img :src="reportData.avatar_url" alt="Avatar"></v-img>
                 </v-avatar>
                 
-                <div>
+                <div style="flex: 1">
                   <div class="text-h4 font-weight-black text-blue-grey-darken-4 mb-1">
                     {{ reportData.username }}
                   </div>
@@ -245,17 +290,57 @@ const getRepoUrl = (repoName) => {
                 </div>
               </div>
 
-              <div class="d-flex flex-column align-center mt-4 mt-md-0 ml-md-6 pl-md-6 border-left-md">
-                <v-progress-circular
-                  :model-value="reportData.data.overall_score"
-                  :color="getScoreColor(reportData.data.overall_score)"
-                  size="100"
-                  width="8"
-                  class="text-h4 font-weight-black"
-                >
-                  {{ reportData.data.overall_score }}
-                </v-progress-circular>
-                <div class="text-subtitle-1 font-weight-bold mt-2 text-grey-darken-2">综合评分</div>
+              <div class="d-flex flex-column align-end ml-md-6 pl-md-6">
+                
+                <div class="d-flex gap-2 mb-2">
+                    <v-btn 
+                        prepend-icon="mdi-arrow-left" 
+                        variant="text" 
+                        color="grey-darken-2"
+                        @click="goBack"
+                    >
+                        返回
+                    </v-btn>
+                    
+                    <v-btn 
+                        prepend-icon="mdi-eye-outline" 
+                        color="info" 
+                        variant="tonal"
+                        :loading="previewing"
+                        @click="previewResume"
+                        elevation="0"
+                    >
+                        在线预览 (EN)
+                    </v-btn>
+
+                    <v-btn 
+                        prepend-icon="mdi-download-outline" 
+                        color="primary" 
+                        variant="flat"
+                        :loading="downloading"
+                        @click="downloadResume"
+                        elevation="2"
+                    >
+                        下载简历 PDF (EN)
+                    </v-btn>
+                </div>
+                <div class="text-caption text-grey mb-4 text-right" style="max-width: 300px;">
+                    * 简历将生成全英文版 PDF。如内容显示不全，请尝试重新生成 AI 报告。
+                </div>
+
+                <div class="d-flex flex-column align-center border-left-md pl-md-6" style="width: 100%;">
+                    <v-progress-circular
+                    :model-value="reportData.data.overall_score"
+                    :color="getScoreColor(reportData.data.overall_score)"
+                    size="100"
+                    width="8"
+                    class="text-h4 font-weight-black"
+                    >
+                    {{ reportData.data.overall_score }}
+                    </v-progress-circular>
+                    <div class="text-subtitle-1 font-weight-bold mt-2 text-grey-darken-2">综合评分</div>
+                </div>
+
               </div>
             </v-card-text>
           </v-card>
@@ -382,11 +467,11 @@ const getRepoUrl = (repoName) => {
 
 /* ---------------- 仓库链接样式 ---------------- */
 .repo-link {
-    color: #1565C0; /* Vuetify Primary Blue */
+    color: #1565C0;
     transition: all 0.2s ease;
     display: inline-flex;
     align-items: center;
-    max-width: 65%; /* 防止过长挤压后面的 Tag */
+    max-width: 65%;
 }
 .repo-link:hover {
     color: #0D47A1;
@@ -399,27 +484,26 @@ const getRepoUrl = (repoName) => {
     height: 350px;
 }
 
-/* ---------------- 炫彩标题 (可选) ---------------- */
+/* ---------------- 炫彩标题 ---------------- */
 .gradient-text-header {
     background: linear-gradient(45deg, #2c3e50, #3498db);
     -webkit-background-clip: text;
     background-clip: text;
 }
 
-/* ---------------- Markdown 美化 (保持原有风格但适配Vuetify) ---------------- */
+/* ---------------- Markdown 美化 ---------------- */
 .markdown-body {
     font-family: 'Roboto', sans-serif;
     line-height: 1.7;
     color: #424242;
 }
 
-/* 使用 :deep() 穿透 v-html 内容 */
 .markdown-body :deep(h3) {
     font-size: 1.1rem;
     font-weight: 700;
     margin-top: 1.5rem;
     margin-bottom: 0.8rem;
-    color: #1565C0; /* Vuetify Primary Blue */
+    color: #1565C0;
     display: flex;
     align-items: center;
 }
@@ -433,7 +517,7 @@ const getRepoUrl = (repoName) => {
     border-radius: 2px;
 }
 
-.markdown-body :deep(ul) {
+.markdown-body :ep(ul) {
     padding-left: 1.2rem;
     margin-bottom: 1rem;
 }
