@@ -201,6 +201,19 @@ const closeDetails = () => {
             <span>粉丝</span>
           </div>
         </div>
+
+
+        <div style="margin-top: 15px;">
+       <router-link 
+         :to="{ name: 'report', params: { username: userProfile.username } }" 
+         class="report-btn"
+       >
+         🚀 生成 AI 深度报告
+       </router-link>
+        </div>
+
+
+
         <a :href="userProfile.html_url" target="_blank" class="github-link">前往 GitHub 主页</a>
       </div>
 
@@ -398,4 +411,19 @@ const closeDetails = () => {
 .legend-item { display: flex; align-items: center; font-size: 0.85em; color: #586069; }
 .legend-dot { width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
 .legend-text { font-weight: 500; }
+
+
+.report-btn {
+  display: inline-block;
+  background-color: #6c5ce7; /* 紫色代表 AI/Magic */
+  color: white;
+  padding: 8px 16px;
+  border-radius: 4px;
+  text-decoration: none;
+  margin-bottom: 10px;
+  font-weight: bold;
+}
+.report-btn:hover {
+  background-color: #5b4cc4;
+}
 </style>

@@ -2,6 +2,10 @@ import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from '../views/HomeView.vue'
 import LoginView from '../views/LoginView.vue' // 导入
 import RegisterView from '../views/RegisterView.vue' // 导入
+
+import ReportView from '../views/ReportView.vue' // 引入新视图
+
+
 // 假设你创建了一个 WishlistView.vue 文件
 import WishlistView from '../views/WishlistView.vue' 
 import { useAuthStore } from '@/stores/auth'
@@ -36,7 +40,15 @@ const router = createRouter({
       path: '/devinfo',
       name: 'devinfo',
       component: DevInfoView
+    },
+
+    // 新增：报告页面，:username 是动态参数
+    {
+      path: '/report/:username',
+      name: 'report',
+      component: ReportView
     }
+
   ]
 })
 
