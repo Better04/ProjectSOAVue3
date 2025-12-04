@@ -321,7 +321,7 @@ const getRepoUrl = (repoName) => {
                         @click="downloadResume"
                         elevation="2"
                     >
-                        下载简历 PDF (EN)
+                        下载简介 PDF (EN)
                     </v-btn>
                 </div>
                 <div class="text-caption text-grey mb-4 text-right" style="max-width: 300px;">

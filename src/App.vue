@@ -1,6 +1,7 @@
 <script setup>
 import { RouterView } from 'vue-router'
 import AppHeader from '@/components/AppHeader.vue' // 导入头部组件
+import AIChat from './components/AIChat.vue';
 </script>
 
 <template>
@@ -8,6 +9,8 @@ import AppHeader from '@/components/AppHeader.vue' // 导入头部组件
   <main>
     <RouterView />
   </main>
+
+  <AIChat></AIChat>
 </template>
 
 <style>
