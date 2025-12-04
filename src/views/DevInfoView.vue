@@ -1,13 +1,43 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue'; // [修复1] 补充导入 onMounted
 import axios from 'axios';
 
-// ... (状态定义保持不变) ...
+// ----------------------------------------
+// Lottie 动画逻辑
+// ----------------------------------------
+const lottieContainer = ref(null);
+
+onMounted(async () => {
+  try {
+    // 动态导入 lottie-web
+    const lottie = (await import('lottie-web')).default;
+
+    // 获取 JSON 动画数据 (确保 searching-food.json 在 public 目录下)
+    const animationData = await fetch('/searching-food.json').then(res => res.json());
+
+    if (lottieContainer.value) {
+      lottie.loadAnimation({
+        container: lottieContainer.value,
+        renderer: 'svg',
+        loop: true,
+        autoplay: true,
+        animationData: animationData
+      });
+    }
+  } catch (e) {
+    console.error("Lottie 动画加载失败:", e);
+  }
+});
+
+// ----------------------------------------
+// 状态定义
+// ----------------------------------------
 const searchUsername = ref('');
 const loading = ref(false);
 const errorMsg = ref('');
-// 在数据存储部分新增：
-const repoLanguages = ref({}); // 存储语言数据
+
+// 数据存储
+const repoLanguages = ref({});
 const userProfile = ref(null);
 const userRepos = ref([]);
 
@@ -23,7 +53,6 @@ const detailsLoading = ref(false);
 // 辅助函数：解析 GitHub URL
 // ----------------------------------------
 const parseGithubUrl = (input) => {
-  // 简单的正则匹配：匹配 github.com/owner/repo
   const regex = /github\.com\/([^\/]+)\/([^\/]+)/;
   const match = input.match(regex);
   if (match) {
@@ -31,6 +60,7 @@ const parseGithubUrl = (input) => {
   }
   return null;
 };
+
 // ----------------------------------------
 // 辅助函数：计算语言百分比和颜色
 // ----------------------------------------
@@ -38,7 +68,6 @@ const getLanguageStats = (langs) => {
   if (!langs || Object.keys(langs).length === 0) return [];
   
   const total = Object.values(langs).reduce((a, b) => a + b, 0);
-  // GitHub 常用语言颜色映射 (简化版)
   const colors = {
     'Vue': '#41b883', 'JavaScript': '#f1e05a', 'TypeScript': '#2b7489',
     'HTML': '#e34c26', 'CSS': '#563d7c', 'Python': '#3572A5',
@@ -50,45 +79,39 @@ const getLanguageStats = (langs) => {
       return {
         name,
         percent: ((bytes / total) * 100).toFixed(1),
-        color: colors[name] || '#ededed' // 默认灰色
+        color: colors[name] || '#ededed'
       };
     })
-    .sort((a, b) => b.percent - a.percent); // 按比例降序排列
+    .sort((a, b) => b.percent - a.percent);
 };
+
 // ----------------------------------------
-// 动作 1: 智能搜索 (支持用户名 或 仓库URL)
+// 动作: 搜索
 // ----------------------------------------
 const handleSearch = async () => {
   if (!searchUsername.value) return;
   
   loading.value = true;
   errorMsg.value = '';
-  // 先不要清空数据，体验更好一点
   
   let targetOwner = searchUsername.value;
   let targetRepo = null;
 
-  // 1. 检查输入的是不是 URL
   const urlInfo = parseGithubUrl(searchUsername.value);
   if (urlInfo) {
     targetOwner = urlInfo.owner;
     targetRepo = urlInfo.repo;
-    // 把输入框的内容自动修正为用户名，显得很智能
     searchUsername.value = targetOwner; 
   }
 
   try {
-    // 2. 获取个人资料 (必须步骤，用于填充背景的大卡片)
     const profileRes = await axios.get(`/api/devinfo/profile/${targetOwner}`);
     userProfile.value = profileRes.data.data;
     
-    // 3. 获取仓库列表
     const reposRes = await axios.get(`/api/devinfo/repos/${targetOwner}`);
     userRepos.value = reposRes.data.data;
 
-    // 4. 如果是 URL 搜索，自动弹出对应仓库的详情
     if (targetRepo) {
-      // 检查仓库是否在列表中（可选，但更严谨）
       await viewRepoDetails(targetRepo, targetOwner);
     }
     
@@ -96,7 +119,7 @@ const handleSearch = async () => {
     console.error(err);
     if (err.response && err.response.status === 404) {
       errorMsg.value = '未找到该用户或仓库，请检查拼写。';
-      userProfile.value = null; // 只有出错时才清空
+      userProfile.value = null;
       userRepos.value = [];
     } else {
       errorMsg.value = '网络请求失败，请稍后重试。';
@@ -106,7 +129,9 @@ const handleSearch = async () => {
   }
 };
 
-// ... (viewReadme 和 closeReadme 保持不变) ...
+// ----------------------------------------
+// 动作: 查看文档
+// ----------------------------------------
 const viewReadme = async (repoName) => {
   if (!userProfile.value) return;
   
@@ -129,9 +154,8 @@ const closeReadme = () => {
 };
 
 // ----------------------------------------
-// 动作 3: 查看详细统计 (升级版：支持传入 owner)
+// 动作: 查看详细统计
 // ----------------------------------------
-// 修改 viewRepoDetails 函数
 const viewRepoDetails = async (repoName, specificOwner = null) => {
   const owner = specificOwner || (userProfile.value ? userProfile.value.username : null);
   if (!owner) return;
@@ -140,10 +164,9 @@ const viewRepoDetails = async (repoName, specificOwner = null) => {
   showDetailsModal.value = true;
   detailsLoading.value = true;
   currentRepoDetails.value = null;
-  repoLanguages.value = {}; // 清空旧数据
+  repoLanguages.value = {};
 
   try {
-    // 并行请求：同时获取 详情 和 语言
     const [detailsRes, langsRes] = await Promise.all([
       axios.get(`/api/devinfo/details/${owner}/${repoName}`),
       axios.get(`/api/devinfo/languages/${owner}/${repoName}`)
@@ -202,17 +225,14 @@ const closeDetails = () => {
           </div>
         </div>
 
-
         <div style="margin-top: 15px;">
-       <router-link 
-         :to="{ name: 'report', params: { username: userProfile.username } }" 
-         class="report-btn"
-       >
-         🚀 生成 AI 深度报告
-       </router-link>
+          <router-link 
+            :to="{ name: 'report', params: { username: userProfile.username } }" 
+            class="report-btn"
+          >
+            🚀 生成 AI 深度报告
+          </router-link>
         </div>
-
-
 
         <a :href="userProfile.html_url" target="_blank" class="github-link">前往 GitHub 主页</a>
       </div>
@@ -278,26 +298,26 @@ const closeDetails = () => {
                         <span class="metric-label">近4周提交数</span>
                     </div>
                 </div>
+                
                 <div class="lang-section" v-if="repoLanguages && Object.keys(repoLanguages).length > 0">
-                <h4>语言构成</h4>
-                
-                <div class="lang-bar">
-                    <div 
-                        v-for="lang in getLanguageStats(repoLanguages)" 
-                        :key="lang.name"
-                        :style="{ width: lang.percent + '%', backgroundColor: lang.color }"
-                        class="lang-segment"
-                        :title="lang.name + ': ' + lang.percent + '%'"
-                    ></div>
-                </div>
-                
-                <div class="lang-legend">
-                    <div v-for="lang in getLanguageStats(repoLanguages)" :key="lang.name" class="legend-item">
-                        <span class="legend-dot" :style="{ backgroundColor: lang.color }"></span>
-                        <span class="legend-text">{{ lang.name }} {{ lang.percent }}%</span>
+                    <h4>语言构成</h4>
+                    <div class="lang-bar">
+                        <div 
+                            v-for="lang in getLanguageStats(repoLanguages)" 
+                            :key="lang.name"
+                            :style="{ width: lang.percent + '%', backgroundColor: lang.color }"
+                            class="lang-segment"
+                            :title="lang.name + ': ' + lang.percent + '%'"
+                        ></div>
+                    </div>
+                    <div class="lang-legend">
+                        <div v-for="lang in getLanguageStats(repoLanguages)" :key="lang.name" class="legend-item">
+                            <span class="legend-dot" :style="{ backgroundColor: lang.color }"></span>
+                            <span class="legend-text">{{ lang.name }} {{ lang.percent }}%</span>
+                        </div>
                     </div>
                 </div>
-            </div>
+
                 <div class="contributors-section">
                     <h4>核心贡献者 (Top 5)</h4>
                     <div class="contributors-list">
@@ -327,15 +347,38 @@ const closeDetails = () => {
           </div>
         </div>
       </div>
+  </div>
 
+  <div class="animation-section">
+    <h2>功能演示：GitHub 情报侦察</h2>
+    <div ref="lottieContainer" class="lottie-container"></div>
   </div>
 </template>
 
 <style scoped>
-/* 样式保持不变 */
+/* Lottie 动画样式 */
+.animation-section {
+    max-width: 1000px; 
+    margin: 50px auto 30px; 
+    padding: 20px;
+    border-top: 2px solid #eee;
+    text-align: center;
+}
+.animation-section h2 {
+    margin-bottom: 20px;
+    color: #34495e;
+}
+.lottie-container {
+    width: 100%; 
+    max-width: 400px; 
+    height: 400px;
+    margin: 0 auto;
+}
+
+/* 原有样式 */
 .dev-container { max-width: 1000px; margin: 30px auto; padding: 0 20px; }
 .search-box { display: flex; gap: 10px; margin-bottom: 20px; justify-content: center; }
-.search-box input { padding: 10px; width: 450px; border: 1px solid #ccc; border-radius: 4px; } /* 稍微调宽一点输入框以容纳 URL */
+.search-box input { padding: 10px; width: 450px; border: 1px solid #ccc; border-radius: 4px; }
 .search-box button { padding: 10px 20px; background-color: #2c3e50; color: white; border: none; border-radius: 4px; cursor: pointer; }
 .search-box button:disabled { background-color: #95a5a6; }
 .error-msg { color: red; text-align: center; margin-bottom: 20px; }
@@ -382,7 +425,7 @@ const closeDetails = () => {
 .metric-card { display: flex; flex-direction: column; align-items: center; }
 .metric-val { font-size: 1.5em; font-weight: bold; color: #2c3e50; }
 .metric-label { font-size: 0.9em; color: #7f8c8d; }
-.high-activity { color: #e74c3c; } /* 红色高亮高活跃度 */
+.high-activity { color: #e74c3c; }
 
 .contributors-section h4 { margin-top: 0; margin-bottom: 10px; border-bottom: 1px solid #eee; padding-bottom: 5px;}
 .contributors-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
@@ -391,6 +434,7 @@ const closeDetails = () => {
 .contributor-item a { text-decoration: none; color: #333; font-weight: bold; margin-right: auto; font-size: 0.9em; }
 .contributions-count { font-size: 0.8em; color: #999; }
 .activity-alert { background: #fff3cd; color: #856404; padding: 10px; border-radius: 4px; font-size: 0.9em; }
+
 /* Language Bar Styles */
 .lang-section { margin-top: 20px; }
 .lang-section h4 { margin-top: 0; margin-bottom: 10px; font-size: 0.95em; color: #586069; }
@@ -412,10 +456,9 @@ const closeDetails = () => {
 .legend-dot { width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
 .legend-text { font-weight: 500; }
 
-
 .report-btn {
   display: inline-block;
-  background-color: #6c5ce7; /* 紫色代表 AI/Magic */
+  background-color: #6c5ce7;
   color: white;
   padding: 8px 16px;
   border-radius: 4px;
