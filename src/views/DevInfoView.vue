@@ -2,7 +2,8 @@
 import { ref, onMounted, nextTick } from 'vue';
 import axios from 'axios';
 import { marked } from 'marked';
-import * as echarts from 'echarts'; // 🚨 确保安装: npm install echarts
+import * as echarts from 'echarts';
+import { useDisplay } from 'vuetify';
 
 // ----------------------------------------
 // Lottie 动画逻辑
@@ -39,6 +40,9 @@ const repoLanguages = ref({});
 const userProfile = ref(null);
 const userRepos = ref([]);
 
+// 视图控制
+const showResultDialog = ref(false); // [新] 控制结果浮层显示
+
 // 详情弹窗相关
 const currentReadme = ref('');
 const currentRepoDetails = ref(null);
@@ -47,7 +51,7 @@ const showReadmeModal = ref(false);
 const showDetailsModal = ref(false);
 const detailsLoading = ref(false);
 
-// [任务4] 单仓库分析相关状态
+// 单仓库分析相关状态
 const repoAnalysis = ref(null);
 const analyzingRepo = ref(false);
 const showRepoAnalysis = ref(false);
@@ -56,7 +60,28 @@ const showRepoAnalysis = ref(false);
 const gaugeChartRef = ref(null);
 const radarChartRef = ref(null);
 const barChartRef = ref(null);
-let chartsInstance = []; // 存储图表实例以便销毁
+let chartsInstance = []; 
+
+// ----------------------------------------
+// [修改] 推荐列表 (10个用户, 纯列表形式)
+// ----------------------------------------
+const recommendedList = ref([
+    { name: 'yyx990803', label: 'Evan You', desc: 'Vue.js & Vite 作者', avatar: 'https://avatars.githubusercontent.com/u/499550?v=4' },
+    { name: 'antfu', label: 'Anthony Fu', desc: 'Vue 核心成员, Vitest, Unocss', avatar: 'https://avatars.githubusercontent.com/u/11247099?v=4' },
+    { name: 'torvalds', label: 'Linus Torvalds', desc: 'Linux & Git 之父', avatar: 'https://avatars.githubusercontent.com/u/1024025?v=4' },
+    { name: 'gaearon', label: 'Dan Abramov', desc: 'Redux 作者, React 核心团队', avatar: 'https://avatars.githubusercontent.com/u/810438?v=4' },
+    { name: 'sindresorhus', label: 'Sindre Sorhus', desc: '全职开源开发者, 1000+ npm 包', avatar: 'https://avatars.githubusercontent.com/u/170270?v=4' },
+    { name: 'tj', label: 'TJ Holowaychuk', desc: 'Express, Koa, Commander 作者', avatar: 'https://avatars.githubusercontent.com/u/25254?v=4' },
+    { name: 'Rich-Harris', label: 'Rich Harris', desc: 'Svelte 框架作者', avatar: 'https://avatars.githubusercontent.com/u/1162160?v=4' },
+    { name: 'posva', label: 'Eduardo San Martin Morote', desc: 'Vue Router & Pinia 作者', avatar: 'https://avatars.githubusercontent.com/u/664177?v=4' },
+    { name: 'addyosmani', label: 'Addy Osmani', desc: 'Google Chrome 工程负责人', avatar: 'https://avatars.githubusercontent.com/u/110953?v=4' },
+    { name: 'sdras', label: 'Sarah Drasner', desc: 'Google 工程总监, Vue 核心成员', avatar: 'https://avatars.githubusercontent.com/u/2281088?v=4' }
+]);
+
+const quickAnalyze = (targetName) => {
+    searchUsername.value = targetName;
+    handleSearch();
+};
 
 // ----------------------------------------
 // 辅助函数
@@ -80,7 +105,7 @@ const getLanguageStats = (langs) => {
     .map(([name, bytes]) => ({
         name,
         percent: ((bytes / total) * 100).toFixed(1),
-        color: colors[name] || '#ededed'
+        color: colors[name] || '#9e9e9e'
       }))
     .sort((a, b) => b.percent - a.percent);
 };
@@ -92,6 +117,7 @@ const handleSearch = async () => {
   if (!searchUsername.value) return;
   loading.value = true;
   errorMsg.value = '';
+  // userProfile.value = null; // 不再清空，改为弹窗覆盖
   
   let targetOwner = searchUsername.value;
   let targetRepo = null;
@@ -110,15 +136,17 @@ const handleSearch = async () => {
     const reposRes = await axios.get(`/api/devinfo/repos/${targetOwner}`);
     userRepos.value = reposRes.data.data;
 
+    // 成功获取数据后，打开浮动层
+    showResultDialog.value = true;
+
     if (targetRepo) {
+      // 这里的 viewRepoDetails 会打开二级弹窗，Vuetify 支持弹窗叠加
       await viewRepoDetails(targetRepo, targetOwner);
     }
   } catch (err) {
     console.error(err);
     if (err.response && err.response.status === 404) {
       errorMsg.value = '未找到该用户或仓库，请检查拼写。';
-      userProfile.value = null;
-      userRepos.value = [];
     } else {
       errorMsg.value = '网络请求失败，请稍后重试。';
     }
@@ -139,11 +167,6 @@ const viewReadme = async (repoName) => {
   } catch (err) {
     currentReadme.value = '无法获取该项目的 README 文档。';
   }
-};
-
-const closeReadme = () => {
-  showReadmeModal.value = false;
-  currentReadme.value = '';
 };
 
 const viewRepoDetails = async (repoName, specificOwner = null) => {
@@ -170,13 +193,8 @@ const viewRepoDetails = async (repoName, specificOwner = null) => {
   }
 };
 
-const closeDetails = () => {
-  showDetailsModal.value = false;
-  currentRepoDetails.value = null;
-};
-
 // ----------------------------------------
-// [核心修改] 触发 AI 单仓库深度分析 (图表版)
+// [核心] 触发 AI 单仓库深度分析
 // ----------------------------------------
 const analyzeCurrentRepo = async () => {
     if (!currentRepoName.value || !userProfile.value) return;
@@ -192,7 +210,6 @@ const analyzeCurrentRepo = async () => {
         repoAnalysis.value = res.data.data;
         showRepoAnalysis.value = true;
         
-        // 数据回来后，等待 DOM 更新，然后渲染图表
         await nextTick();
         initRepoCharts();
         
@@ -206,39 +223,34 @@ const analyzeCurrentRepo = async () => {
 const initRepoCharts = () => {
     if (!repoAnalysis.value) return;
     
-    // 清理旧实例
     chartsInstance.forEach(c => c.dispose());
     chartsInstance = [];
 
     const data = repoAnalysis.value;
 
-    // 1. 仪表盘 (综合评分)
+    // 1. 仪表盘
     if (gaugeChartRef.value) {
         const gaugeChart = echarts.init(gaugeChartRef.value);
         gaugeChart.setOption({
             series: [{
                 type: 'gauge',
-                // [修改] 调整起始角度，让仪表盘更像一个半圆，腾出底部空间
                 startAngle: 200, endAngle: -20,
                 min: 0, max: 100,
                 splitNumber: 5,
                 itemStyle: { color: '#58D9F9' },
-                progress: { show: true, width: 15 }, // [修改] 进度条变细
+                progress: { show: true, width: 15 },
                 pointer: { show: false },
-                axisLine: { lineStyle: { width: 15 } }, // [修改] 轴线变细
+                axisLine: { lineStyle: { width: 15 } },
                 axisTick: { show: false },
-                // [修改] 分割线变短变细，避免挡住文字
                 splitLine: { length: 8, lineStyle: { width: 2, color: '#999' } },
-                // [修改] 调整刻度标签的位置(distance)和字体大小
                 axisLabel: { distance: 12, color: '#999', fontSize: 10 },
-                // [修改] 调整中心大数字的位置(offsetCenter)和字体大小
                 detail: {
                     valueAnimation: true,
-                    fontSize: 36, // 稍微调小一点
+                    fontSize: 36,
                     fontWeight: 'bolder',
                     formatter: '{value}分',
                     color: 'auto',
-                    offsetCenter: [0, '30%'] // [关键修改] 向下移动，避免和刻度重叠
+                    offsetCenter: [0, '30%']
                 },
                 data: [{ value: data.overall_score }]
             }]
@@ -246,7 +258,7 @@ const initRepoCharts = () => {
         chartsInstance.push(gaugeChart);
     }
 
-    // 2. 雷达图 (五维能力)
+    // 2. 雷达图
     if (radarChartRef.value && data.radar_data) {
         const radarChart = echarts.init(radarChartRef.value);
         const radarData = data.radar_data;
@@ -260,7 +272,7 @@ const initRepoCharts = () => {
                     { name: '创新价值', max: 100 }
                 ],
                 radius: '65%',
-                center: ['50%', '55%'], // 稍微下移一点
+                center: ['50%', '55%'],
             },
             series: [{
                 name: '能力评估',
@@ -274,7 +286,7 @@ const initRepoCharts = () => {
                         radarData.innovation
                     ],
                     name: currentRepoName.value,
-                    areaStyle: { color: 'rgba(128, 90, 213, 0.4)' }, // 紫色半透明
+                    areaStyle: { color: 'rgba(128, 90, 213, 0.4)' },
                     itemStyle: { color: '#805AD5' }
                 }]
             }]
@@ -282,10 +294,10 @@ const initRepoCharts = () => {
         chartsInstance.push(radarChart);
     }
 
-    // 3. 柱状图 (适用场景)
+    // 3. 柱状图
     if (barChartRef.value && data.scenarios) {
         const barChart = echarts.init(barChartRef.value);
-        const scenarios = data.scenarios; // [{name: 'x', score: 90}, ...]
+        const scenarios = data.scenarios;
         barChart.setOption({
             grid: { top: 10, bottom: 20, left: 100, right: 40 },
             xAxis: { 
@@ -317,316 +329,522 @@ const initRepoCharts = () => {
         chartsInstance.push(barChart);
     }
 
-    // 窗口大小改变时重绘
     window.addEventListener('resize', () => chartsInstance.forEach(c => c.resize()));
 };
-
 </script>
 
 <template>
-  <div class="dev-container">
-    <h1>GitHub 情报侦察</h1>
+  <v-container fluid class="fill-height align-start pa-0 bg-surface-light" style="min-height: 100vh;">
     
-    <div class="search-box">
-      <input 
-        v-model="searchUsername" 
-        @keyup.enter="handleSearch"
-        type="text" 
-        placeholder="输入用户名 或 仓库链接 (如: [https://github.com/flask/flask](https://github.com/flask/flask))" 
-      />
-      <button @click="handleSearch" :disabled="loading">
-        {{ loading ? '侦察中...' : '开始分析' }}
-      </button>
-    </div>
-
-    <div v-if="errorMsg" class="error-msg">{{ errorMsg }}</div>
-
-    <div v-if="userProfile" class="content-grid">
-      <div class="profile-card">
-        <img :src="userProfile.avatar_url" alt="Avatar" class="avatar"/>
-        <h2>{{ userProfile.name || userProfile.username }}</h2>
-        <p class="username">@{{ userProfile.username }}</p>
-        <p class="bio" v-if="userProfile.bio">{{ userProfile.bio }}</p>
-        <div class="stats">
-          <div class="stat-item"><strong>{{ userProfile.public_repos }}</strong><span>仓库</span></div>
-          <div class="stat-item"><strong>{{ userProfile.followers }}</strong><span>粉丝</span></div>
-        </div>
-        <div style="margin-top: 15px;">
-          <router-link :to="{ name: 'report', params: { username: userProfile.username } }" class="report-btn">
-            🚀 生成 AI 深度报告 (人物)
-          </router-link>
-        </div>
-        <a :href="userProfile.html_url" target="_blank" class="github-link">前往 GitHub 主页</a>
-      </div>
-
-      <div class="repos-list">
-        <h3>公开仓库 ({{ userRepos.length }})</h3>
-        <div v-for="repo in userRepos" :key="repo.name" class="repo-item">
-          <div class="repo-header">
-            <span class="repo-name">{{ repo.name }}</span>
-            <span class="repo-lang" v-if="repo.language">{{ repo.language }}</span>
-            <span class="repo-stars">★ {{ repo.stars }}</span>
-          </div>
-          <p class="repo-desc">{{ repo.description }}</p>
-          <div class="repo-actions">
-            <small>更新于: {{ new Date(repo.updated_at).toLocaleDateString() }}</small>
-            <div class="btn-group">
-                <button @click="viewRepoDetails(repo.name)" class="stats-btn">📊 详细统计</button>
-                <button @click="viewReadme(repo.name)" class="readme-btn">📄 查看文档</button>
+    <div class="hero-section w-100 py-8 px-4 px-md-16 bg-white border-b-sm">
+      <v-container style="max-width: 1400px;">
+        <v-row align="center" justify="space-between">
+          <v-col cols="12" md="6" class="pr-md-10">
+            <div class="animate__animated animate__fadeInLeft">
+              <v-chip color="secondary" variant="flat" size="small" class="mb-4 font-weight-bold">
+                GITHUB INTELLIGENCE
+              </v-chip>
+              <h1 class="text-h3 font-weight-black text-primary mb-4" style="line-height: 1.2;">
+                GitHub 情报侦察<br/>深度分析
+              </h1>
+              <p class="text-h6 text-grey-darken-1 mb-8" style="line-height: 1.6;">
+                输入 GitHub 用户名或仓库链接，一键获取开发者画像、代码质量分析及 AI 深度评估。让数据说话，发现开源世界的价值。
+              </p>
+              
+              <div class="search-area d-flex align-center gap-2" style="max-width: 500px;">
+                <v-text-field
+                  v-model="searchUsername"
+                  label="输入用户名 或 仓库链接"
+                  placeholder="例如: vuejs/core 或 antfu"
+                  variant="outlined"
+                  rounded="lg"
+                  density="comfortable"
+                  hide-details
+                  prepend-inner-icon="mdi-github"
+                  bg-color="grey-lighten-5"
+                  color="primary"
+                  @keyup.enter="handleSearch"
+                ></v-text-field>
+                <v-btn
+                  color="primary"
+                  size="large"
+                  height="48"
+                  rounded="lg"
+                  :loading="loading"
+                  @click="handleSearch"
+                  elevation="2"
+                >
+                  开始侦察
+                </v-btn>
+              </div>
+              <div v-if="errorMsg" class="text-error mt-2 font-weight-bold">{{ errorMsg }}</div>
             </div>
-          </div>
-        </div>
-      </div>
+          </v-col>
+
+          <v-col cols="12" md="6" class="position-relative d-flex justify-center justify-md-end">
+             <div ref="lottieContainer" style="width: 100%; max-width: 450px; height: 350px;"></div>
+             <div class="decorative-circle bg-secondary"></div>
+          </v-col>
+        </v-row>
+      </v-container>
     </div>
 
-    <div v-if="showReadmeModal" class="modal-overlay" @click.self="closeReadme">
-      <div class="modal-content readme-modal">
-        <div class="modal-header">
-          <h3>{{ currentRepoName }} - README.md</h3>
-          <button @click="closeReadme">×</button>
-        </div>
-        <div class="modal-body">
-            <div class="markdown-body" v-html="marked.parse(currentReadme)" style="padding: 10px;"></div>
-        </div>
-      </div>
-    </div>
+    <v-container style="max-width: 1400px;" class="py-8">
+        
+        <v-overlay :model-value="loading" class="align-center justify-center" persistent>
+            <v-card class="pa-5 text-center rounded-xl" elevation="3">
+              <v-progress-circular indeterminate color="primary" size="64" class="mb-3"></v-progress-circular>
+              <div class="text-subtitle-1 font-weight-bold text-grey-darken-2">
+                正在连接 GitHub 数据中枢...
+              </div>
+            </v-card>
+        </v-overlay>
 
-    <div v-if="showDetailsModal" class="modal-overlay" @click.self="closeDetails">
-        <div class="modal-content stats-modal">
-          <div class="modal-header">
-            <h3>{{ currentRepoName }} - 深度情报</h3>
-            <button @click="closeDetails">×</button>
-          </div>
-          <div class="modal-body">
-            <div v-if="detailsLoading" class="loading-text">正在潜入 GitHub 数据库获取情报...</div>
-            <div v-else-if="currentRepoDetails" class="stats-container">
-                
-                <div class="analysis-action-area" style="text-align: center; margin-bottom: 20px;">
-                    <button @click="analyzeCurrentRepo" class="ai-analyze-btn" :disabled="analyzingRepo">
-                        <span v-if="analyzingRepo">🧠 AI 正在绘图 (计算中)...</span>
-                        <span v-else>🔍 AI 深度透视 (图表版)</span>
-                    </button>
-                </div>
-                
-                <div class="metrics-row">
-                    <div class="metric-card"><span class="metric-val">{{ currentRepoDetails.forks_count }}</span><span class="metric-label">Forks</span></div>
-                    <div class="metric-card"><span class="metric-val">{{ currentRepoDetails.open_issues_count }}</span><span class="metric-label">Open Issues</span></div>
-                    <div class="metric-card">
-                        <span class="metric-val" :class="{'high-activity': (currentRepoDetails.recent_commit_count_4weeks || 0) > 10}">
-                            {{ currentRepoDetails.recent_commit_count_4weeks ?? '-' }}
-                        </span>
-                        <span class="metric-label">近4周提交数</span>
+        <div class="animate__animated animate__fadeInUp">
+            <div class="d-flex align-center mb-6">
+                <v-icon icon="mdi-account-search-outline" color="grey-darken-2" class="mr-2"></v-icon>
+                <h3 class="text-h6 font-weight-bold text-grey-darken-2">热门搜索推荐</h3>
+            </div>
+
+            <v-row>
+                <v-col cols="12" md="6">
+                    <v-list class="bg-transparent" lines="two">
+                        <v-list-item
+                            v-for="(item, index) in recommendedList.slice(0, 5)"
+                            :key="index"
+                            :prepend-avatar="item.avatar"
+                            class="mb-2 rounded-lg list-item-hover"
+                            @click="quickAnalyze(item.name)"
+                            link
+                        >
+                            <v-list-item-title class="font-weight-bold text-primary">
+                                {{ item.label }}
+                                <span class="text-caption text-grey ml-2">@{{ item.name }}</span>
+                            </v-list-item-title>
+                            <v-list-item-subtitle class="text-caption text-grey-darken-1 mt-1">
+                                {{ item.desc }}
+                            </v-list-item-subtitle>
+                            <template v-slot:append>
+                                <v-icon icon="mdi-magnify" size="small" color="grey-lighten-1"></v-icon>
+                            </template>
+                        </v-list-item>
+                    </v-list>
+                </v-col>
+                <v-col cols="12" md="6">
+                    <v-list class="bg-transparent" lines="two">
+                        <v-list-item
+                            v-for="(item, index) in recommendedList.slice(5, 10)"
+                            :key="index"
+                            :prepend-avatar="item.avatar"
+                            class="mb-2 rounded-lg list-item-hover"
+                            @click="quickAnalyze(item.name)"
+                            link
+                        >
+                            <v-list-item-title class="font-weight-bold text-primary">
+                                {{ item.label }}
+                                <span class="text-caption text-grey ml-2">@{{ item.name }}</span>
+                            </v-list-item-title>
+                            <v-list-item-subtitle class="text-caption text-grey-darken-1 mt-1">
+                                {{ item.desc }}
+                            </v-list-item-subtitle>
+                            <template v-slot:append>
+                                <v-icon icon="mdi-magnify" size="small" color="grey-lighten-1"></v-icon>
+                            </template>
+                        </v-list-item>
+                    </v-list>
+                </v-col>
+            </v-row>
+        </div>
+    </v-container>
+
+    <v-dialog 
+        v-model="showResultDialog" 
+        fullscreen 
+        transition="dialog-bottom-transition"
+        scrollable
+    >
+        <v-card class="bg-grey-lighten-5">
+            <v-toolbar color="primary" density="comfortable">
+                <v-btn icon="mdi-arrow-left" @click="showResultDialog = false"></v-btn>
+                <v-toolbar-title class="font-weight-bold">
+                    GitHub 侦察报告：{{ userProfile?.username }}
+                </v-toolbar-title>
+                <v-spacer></v-spacer>
+                <v-btn icon="mdi-close" @click="showResultDialog = false"></v-btn>
+            </v-toolbar>
+
+            <v-card-text class="pa-4 pa-md-8">
+                <v-container style="max-width: 1400px;" class="pa-0">
+                    <div v-if="userProfile" class="animate__animated animate__fadeIn">
+                        <v-row>
+                            <v-col cols="12" md="4" lg="3">
+                                <v-card class="rounded-xl profile-card sticky-card" elevation="3" border>
+                                    <div class="bg-white pt-8 pb-4 px-4 text-center rounded-xl position-relative">
+                                        <v-avatar size="120" class="elevation-4 mb-4">
+                                            <v-img :src="userProfile.avatar_url" alt="Avatar"></v-img>
+                                        </v-avatar>
+                                        <div class="text-h5 font-weight-black text-grey-darken-4 mb-1">
+                                            {{ userProfile.name || userProfile.username }}
+                                        </div>
+                                        <div class="text-subtitle-1 text-primary font-weight-bold">@{{ userProfile.username }}</div>
+                                    </div>
+
+                                    <v-card-text class="text-center pt-0 pb-6">
+                                        <p class="text-body-2 text-grey-darken-1 mb-6 px-4" v-if="userProfile.bio">
+                                            {{ userProfile.bio }}
+                                        </p>
+
+                                        <div class="d-flex justify-space-around py-4 bg-grey-lighten-4 rounded-lg mb-6 mx-2">
+                                            <div>
+                                                <div class="text-h6 font-weight-black text-grey-darken-3">{{ userProfile.public_repos }}</div>
+                                                <div class="text-caption font-weight-bold text-grey">仓库</div>
+                                            </div>
+                                            <div>
+                                                <div class="text-h6 font-weight-black text-grey-darken-3">{{ userProfile.followers }}</div>
+                                                <div class="text-caption font-weight-bold text-grey">粉丝</div>
+                                            </div>
+                                        </div>
+
+                                        <div class="d-flex flex-column gap-3 px-2">
+                                            <v-btn
+                                                :to="{ name: 'report', params: { username: userProfile.username } }"
+                                                block
+                                                color="primary"
+                                                variant="flat"
+                                                size="large"
+                                                rounded="lg"
+                                                prepend-icon="mdi-brain"
+                                            >
+                                                生成 AI 深度报告
+                                            </v-btn>
+                                            
+                                            <v-btn
+                                                :href="userProfile.html_url"
+                                                target="_blank"
+                                                block
+                                                variant="outlined"
+                                                color="grey-darken-1"
+                                                size="large"
+                                                rounded="lg"
+                                                prepend-icon="mdi-github"
+                                            >
+                                                GitHub 主页
+                                            </v-btn>
+                                        </div>
+                                    </v-card-text>
+                                </v-card>
+                            </v-col>
+
+                            <v-col cols="12" md="8" lg="9">
+                                <div class="d-flex align-center justify-space-between mb-6 mt-4 mt-md-0">
+                                    <h2 class="text-h5 font-weight-bold text-grey-darken-3">
+                                        <v-icon icon="mdi-source-branch" class="mr-2" color="primary"></v-icon>
+                                        公开仓库 ({{ userRepos.length }})
+                                    </h2>
+                                </div>
+
+                                <v-row>
+                                    <v-col 
+                                        v-for="repo in userRepos" 
+                                        :key="repo.name" 
+                                        cols="12" lg="6" xl="4"
+                                    >
+                                        <v-card class="rounded-xl h-100 repo-card bg-white" elevation="1" border>
+                                            <v-card-item>
+                                                <div class="d-flex justify-space-between align-start mb-2">
+                                                    <div class="text-h6 font-weight-bold text-grey-darken-3 text-truncate pr-2">
+                                                        {{ repo.name }}
+                                                    </div>
+                                                    <v-chip size="x-small" color="amber-darken-2" variant="tonal" prepend-icon="mdi-star" class="font-weight-bold">
+                                                        {{ repo.stars }}
+                                                    </v-chip>
+                                                </div>
+                                                <div class="d-flex align-center mb-3">
+                                                    <v-chip 
+                                                        v-if="repo.language" 
+                                                        size="x-small" 
+                                                        class="mr-2 font-weight-bold"
+                                                        color="blue-grey-lighten-4"
+                                                        text-color="blue-grey-darken-2"
+                                                        variant="flat"
+                                                    >
+                                                        {{ repo.language }}
+                                                    </v-chip>
+                                                    <span class="text-caption text-grey">
+                                                        {{ new Date(repo.updated_at).toLocaleDateString() }}
+                                                    </span>
+                                                </div>
+                                                <p class="text-body-2 text-grey-darken-1 line-clamp-2" style="height: 40px;">
+                                                    {{ repo.description || '暂无描述' }}
+                                                </p>
+                                            </v-card-item>
+
+                                            <v-divider></v-divider>
+
+                                            <v-card-actions class="pa-4">
+                                                <v-btn 
+                                                    variant="tonal" 
+                                                    color="primary" 
+                                                    size="small" 
+                                                    class="flex-grow-1 font-weight-bold"
+                                                    prepend-icon="mdi-chart-line"
+                                                    @click="viewRepoDetails(repo.name)"
+                                                >
+                                                    详细情报
+                                                </v-btn>
+                                                <v-btn 
+                                                    variant="text" 
+                                                    color="grey-darken-1" 
+                                                    size="small"
+                                                    icon="mdi-file-document-outline"
+                                                    @click="viewReadme(repo.name)"
+                                                    v-tooltip:top="'README'"
+                                                ></v-btn>
+                                            </v-card-actions>
+                                        </v-card>
+                                    </v-col>
+                                </v-row>
+                            </v-col>
+                        </v-row>
                     </div>
-                </div>
-                
-                <div class="lang-section" v-if="repoLanguages && Object.keys(repoLanguages).length > 0">
-                    <h4>语言构成</h4>
-                    <div class="lang-bar">
-                        <div v-for="lang in getLanguageStats(repoLanguages)" :key="lang.name" :style="{ width: lang.percent + '%', backgroundColor: lang.color }" class="lang-segment"></div>
+                </v-container>
+            </v-card-text>
+        </v-card>
+    </v-dialog>
+
+    <v-dialog v-model="showReadmeModal" max-width="900" scrollable>
+      <v-card class="rounded-xl">
+        <v-toolbar color="surface" density="compact" class="border-b">
+          <v-toolbar-title class="text-subtitle-1 font-weight-bold">
+            <v-icon icon="mdi-file-document" class="mr-2" color="primary"></v-icon>
+            {{ currentRepoName }} - README.md
+          </v-toolbar-title>
+          <v-btn icon="mdi-close" variant="text" @click="showReadmeModal = false"></v-btn>
+        </v-toolbar>
+        <v-card-text class="pa-6" style="min-height: 400px; max-height: 70vh;">
+            <div class="markdown-body" v-html="marked.parse(currentReadme)"></div>
+        </v-card-text>
+      </v-card>
+    </v-dialog>
+
+    <v-dialog v-model="showDetailsModal" max-width="800" scrollable style="z-index: 2500;">
+      <v-card class="rounded-xl">
+        <v-toolbar color="primary" class="px-2">
+          <v-toolbar-title class="font-weight-bold">
+             {{ currentRepoName }} - 深度情报
+          </v-toolbar-title>
+          <v-btn icon="mdi-close" variant="text" @click="showDetailsModal = false"></v-btn>
+        </v-toolbar>
+
+        <v-card-text class="pa-0 bg-grey-lighten-5" style="max-height: 80vh;">
+            <div v-if="detailsLoading" class="d-flex flex-column align-center justify-center pa-12">
+                <v-progress-circular indeterminate color="primary" size="64" class="mb-4"></v-progress-circular>
+                <div class="text-grey-darken-1">正在潜入 GitHub 数据库获取情报...</div>
+            </div>
+
+            <div v-else-if="currentRepoDetails" class="pa-6">
+                <v-card class="mb-6 rounded-lg bg-gradient-primary" elevation="4">
+                    <v-card-text class="d-flex align-center justify-space-between">
+                        <div>
+                            <div class="text-h6 font-weight-bold text-white">AI 智能分析</div>
+                            <div class="text-caption text-white opacity-80">基于大模型的代码质量与应用场景评估</div>
+                        </div>
+                        <v-btn 
+                            color="white" 
+                            variant="flat" 
+                            class="text-primary font-weight-bold"
+                            rounded="pill"
+                            prepend-icon="mdi-auto-fix"
+                            :loading="analyzingRepo"
+                            @click="analyzeCurrentRepo"
+                        >
+                            {{ analyzingRepo ? '深度计算中...' : '生成透视报告' }}
+                        </v-btn>
+                    </v-card-text>
+                </v-card>
+
+                <v-row class="mb-2">
+                    <v-col cols="4">
+                        <v-card class="text-center py-4 rounded-lg" border flat>
+                            <div class="text-h5 font-weight-bold text-grey-darken-3">{{ currentRepoDetails.forks_count }}</div>
+                            <div class="text-caption text-grey">Forks</div>
+                        </v-card>
+                    </v-col>
+                    <v-col cols="4">
+                        <v-card class="text-center py-4 rounded-lg" border flat>
+                            <div class="text-h5 font-weight-bold text-grey-darken-3">{{ currentRepoDetails.open_issues_count }}</div>
+                            <div class="text-caption text-grey">Open Issues</div>
+                        </v-card>
+                    </v-col>
+                    <v-col cols="4">
+                        <v-card class="text-center py-4 rounded-lg" border flat>
+                            <div class="text-h5 font-weight-bold" :class="(currentRepoDetails.recent_commit_count_4weeks || 0) > 10 ? 'text-error' : 'text-grey-darken-3'">
+                                {{ currentRepoDetails.recent_commit_count_4weeks ?? '-' }}
+                            </div>
+                            <div class="text-caption text-grey">近4周提交</div>
+                        </v-card>
+                    </v-col>
+                </v-row>
+
+                <v-card class="mb-6 rounded-lg pa-4" border flat>
+                    <div class="text-subtitle-1 font-weight-bold mb-3 text-grey-darken-3">语言构成</div>
+                    <div class="d-flex rounded-pill overflow-hidden mb-3" style="height: 12px;">
+                        <div v-for="lang in getLanguageStats(repoLanguages)" :key="lang.name" 
+                             :style="{ width: lang.percent + '%', backgroundColor: lang.color }"></div>
                     </div>
-                    <div class="lang-legend">
-                        <div v-for="lang in getLanguageStats(repoLanguages)" :key="lang.name" class="legend-item">
-                            <span class="legend-dot" :style="{ backgroundColor: lang.color }"></span><span class="legend-text">{{ lang.name }} {{ lang.percent }}%</span>
+                    <div class="d-flex flex-wrap gap-3">
+                        <div v-for="lang in getLanguageStats(repoLanguages)" :key="lang.name" class="d-flex align-center">
+                            <v-icon icon="mdi-circle" size="x-small" :color="lang.color" class="mr-1"></v-icon>
+                            <span class="text-caption font-weight-medium">{{ lang.name }} {{ lang.percent }}%</span>
                         </div>
                     </div>
-                </div>
+                </v-card>
 
-                <div class="contributors-section">
-                    <h4>核心贡献者 (Top 5)</h4>
-                    <div class="contributors-list">
-                        <div v-for="c in currentRepoDetails.contributors" :key="c.login" class="contributor-item">
-                            <img :src="c.avatar_url" class="contributor-avatar" />
-                            <a :href="c.html_url" target="_blank">{{ c.login }}</a>
-                            <span class="contributions-count">{{ c.contributions }} commits</span>
-                        </div>
-                    </div>
-                </div>
+                <v-card class="rounded-lg pa-4" border flat>
+                    <div class="text-subtitle-1 font-weight-bold mb-3 text-grey-darken-3">核心贡献者 (Top 5)</div>
+                    <v-list density="compact" class="bg-transparent pa-0">
+                        <v-list-item v-for="c in currentRepoDetails.contributors" :key="c.login" class="px-0">
+                            <template v-slot:prepend>
+                                <v-avatar size="36" class="mr-3">
+                                    <v-img :src="c.avatar_url"></v-img>
+                                </v-avatar>
+                            </template>
+                            <v-list-item-title class="font-weight-bold">
+                                <a :href="c.html_url" target="_blank" class="text-decoration-none text-high-emphasis">
+                                    {{ c.login }}
+                                </a>
+                            </v-list-item-title>
+                            <template v-slot:append>
+                                <v-chip size="small" variant="tonal" color="success">{{ c.contributions }} commits</v-chip>
+                            </template>
+                        </v-list-item>
+                    </v-list>
+                </v-card>
             </div>
-          </div>
-        </div>
-      </div>
+        </v-card-text>
+      </v-card>
+    </v-dialog>
 
-    <div v-if="showRepoAnalysis" class="modal-overlay" @click.self="showRepoAnalysis = false">
-        <div class="modal-content analysis-modal-visual">
-            <div class="modal-header">
-                <h3>🤖 AI 仓库透视: {{ currentRepoName }}</h3>
-                <button @click="showRepoAnalysis = false">×</button>
-            </div>
+    <v-dialog v-model="showRepoAnalysis" max-width="900" style="z-index: 2600;">
+        <v-card class="rounded-xl">
+            <v-card-title class="d-flex justify-space-between align-center py-4 px-6 bg-surface-light border-b">
+                <span class="text-h6 font-weight-bold text-primary">
+                    <v-icon icon="mdi-robot-outline" class="mr-2"></v-icon>
+                    AI 仓库透视: {{ currentRepoName }}
+                </span>
+                <v-btn icon="mdi-close" variant="text" size="small" @click="showRepoAnalysis = false"></v-btn>
+            </v-card-title>
             
-            <div class="modal-body visual-body" v-if="repoAnalysis">
-                <div class="visual-header">
-                    <div class="summary-box">
-                        <span class="quote-icon">❝</span>
-                        {{ repoAnalysis.summary }}
-                        <span class="quote-icon">❞</span>
-                    </div>
-                    <div class="keywords-box">
-                        <span v-for="kw in repoAnalysis.keywords" :key="kw" class="keyword-tag">{{ kw }}</span>
-                    </div>
-                </div>
-
-                <div class="charts-grid">
-                    <div class="chart-card">
-                        <h4>🌟 综合推荐指数</h4>
-                        <div ref="gaugeChartRef" class="chart-box" style="height: 200px;"></div>
-                    </div>
-
-                    <div class="chart-card">
-                        <h4>🛡️ 五维能力模型</h4>
-                        <div ref="radarChartRef" class="chart-box" style="height: 250px;"></div>
-                    </div>
+            <v-card-text class="pa-6" v-if="repoAnalysis">
+                <div class="bg-blue-grey-lighten-5 pa-4 rounded-lg mb-6 border-dashed">
+                    <v-icon icon="mdi-format-quote-open" color="grey" class="mb-2"></v-icon>
+                    <span class="text-body-1 text-grey-darken-3 font-italic">{{ repoAnalysis.summary }}</span>
+                    <v-icon icon="mdi-format-quote-close" color="grey" class="ml-1"></v-icon>
                     
-                    <div class="chart-card">
-                        <h4>🎯 最佳适用场景</h4>
-                        <div ref="barChartRef" class="chart-box" style="height: 200px;"></div>
+                    <div class="mt-3 d-flex flex-wrap gap-2">
+                        <v-chip v-for="kw in repoAnalysis.keywords" :key="kw" 
+                                color="primary" variant="tonal" size="small" class="font-weight-bold">
+                            {{ kw }}
+                        </v-chip>
                     </div>
                 </div>
-            </div>
-        </div>
-    </div>
 
-  </div>
-  <div class="animation-section">
-    <h2>功能演示：GitHub 情报侦察</h2>
-    <div ref="lottieContainer" class="lottie-container"></div>
-  </div>
+                <v-row>
+                    <v-col cols="12" md="4">
+                        <v-card class="fill-height rounded-lg" border flat>
+                            <v-card-title class="text-subtitle-2 text-center text-grey-darken-2">🌟 综合推荐指数</v-card-title>
+                            <div ref="gaugeChartRef" style="width: 100%; height: 250px;"></div>
+                        </v-card>
+                    </v-col>
+                    <v-col cols="12" md="4">
+                        <v-card class="fill-height rounded-lg" border flat>
+                            <v-card-title class="text-subtitle-2 text-center text-grey-darken-2">🛡️ 五维能力模型</v-card-title>
+                            <div ref="radarChartRef" style="width: 100%; height: 250px;"></div>
+                        </v-card>
+                    </v-col>
+                    <v-col cols="12" md="4">
+                        <v-card class="fill-height rounded-lg" border flat>
+                            <v-card-title class="text-subtitle-2 text-center text-grey-darken-2">🎯 最佳适用场景</v-card-title>
+                            <div ref="barChartRef" style="width: 100%; height: 250px;"></div>
+                        </v-card>
+                    </v-col>
+                </v-row>
+            </v-card-text>
+        </v-card>
+    </v-dialog>
+
+  </v-container>
 </template>
 
 <style scoped>
-/* 这里保留原有的基础样式，仅添加新图表相关的样式 */
+/* ---------------- 基础辅助类 ---------------- */
+.gap-2 { gap: 8px; }
+.gap-3 { gap: 12px; }
+.border-b-sm { border-bottom: 1px solid rgba(0,0,0,0.05); }
+.line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
 
-/* ... (复制你原有的所有 .dev-container, .profile-card 等样式到这里，为了简洁我只列出新增的) ... */
-.dev-container { max-width: 1000px; margin: 30px auto; padding: 0 20px; }
-.search-box { display: flex; gap: 10px; margin-bottom: 20px; justify-content: center; }
-.search-box input { padding: 10px; width: 450px; border: 1px solid #ccc; border-radius: 4px; }
-.search-box button { padding: 10px 20px; background-color: #2c3e50; color: white; border: none; border-radius: 4px; cursor: pointer; }
-.search-box button:disabled { background-color: #95a5a6; }
-.error-msg { color: red; text-align: center; margin-bottom: 20px; }
-.content-grid { display: grid; grid-template-columns: 280px 1fr; gap: 30px; align-items: start; }
-/* Profile Card */
-.profile-card { background: #f8f9fa; padding: 20px; border-radius: 8px; text-align: center; border: 1px solid #ddd; }
-.avatar { width: 120px; height: 120px; border-radius: 50%; margin-bottom: 10px; object-fit: cover; }
-.username { color: #666; margin-bottom: 10px; }
-.bio { margin-bottom: 15px; font-style: italic; color: #555; }
-.stats { display: flex; justify-content: space-around; margin-bottom: 20px; }
-.stat-item { display: flex; flex-direction: column; }
-.github-link { display: inline-block; text-decoration: none; color: #42b983; border: 1px solid #42b983; padding: 5px 15px; border-radius: 20px; transition: 0.3s; }
-.github-link:hover { background: #42b983; color: white; }
-/* Repos List */
-.repos-list h3 { margin-top: 0; border-bottom: 2px solid #eee; padding-bottom: 10px; }
-.repo-item { border: 1px solid #eee; padding: 15px; margin-bottom: 15px; border-radius: 6px; background: white; transition: transform 0.2s; }
-.repo-item:hover { transform: translateY(-2px); box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-.repo-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-.repo-name { font-weight: bold; font-size: 1.1em; color: #2c3e50; }
-.repo-lang { background: #eee; padding: 2px 6px; border-radius: 4px; font-size: 0.8em; color: #666; }
-.repo-stars { color: #f1c40f; font-weight: bold; margin-left: auto; }
-.repo-desc { color: #555; font-size: 0.9em; margin-bottom: 10px; line-height: 1.4; }
-.repo-actions { display: flex; justify-content: space-between; align-items: center; color: #999; font-size: 0.85em; }
-.btn-group { display: flex; gap: 10px; }
-.readme-btn { background: #e0f2f1; color: #00897b; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
-.readme-btn:hover { background: #b2dfdb; }
-.stats-btn { background: #e3f2fd; color: #1976d2; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
-.stats-btn:hover { background: #bbdefb; }
-/* Modal Common */
-.modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000; }
-.modal-content { background: white; width: 80%; max-width: 800px; max-height: 80vh; border-radius: 8px; display: flex; flex-direction: column; }
-.modal-header { padding: 15px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; }
-.modal-header button { background: none; border: none; font-size: 1.5em; cursor: pointer; }
-.modal-body { padding: 20px; overflow-y: auto; background: #fdfdfd; }
-.modal-body pre { white-space: pre-wrap; word-wrap: break-word; font-family: 'Courier New', monospace; font-size: 0.9em; color: #333; }
-.loading-text { text-align: center; padding: 20px; color: #666; }
-.stats-container { display: flex; flex-direction: column; gap: 20px; }
-.metrics-row { display: flex; justify-content: space-around; background: #f5f5f5; padding: 15px; border-radius: 8px; }
-.metric-card { display: flex; flex-direction: column; align-items: center; }
-.metric-val { font-size: 1.5em; font-weight: bold; color: #2c3e50; }
-.metric-label { font-size: 0.9em; color: #7f8c8d; }
-.high-activity { color: #e74c3c; }
-.contributors-section h4 { margin-top: 0; margin-bottom: 10px; border-bottom: 1px solid #eee; padding-bottom: 5px;}
-.contributors-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
-.contributor-item { display: flex; align-items: center; background: white; border: 1px solid #eee; padding: 8px; border-radius: 6px; }
-.contributor-avatar { width: 40px; height: 40px; border-radius: 50%; margin-right: 10px; }
-.contributor-item a { text-decoration: none; color: #333; font-weight: bold; margin-right: auto; font-size: 0.9em; }
-.contributions-count { font-size: 0.8em; color: #999; }
-.activity-alert { background: #fff3cd; color: #856404; padding: 10px; border-radius: 4px; font-size: 0.9em; }
-.lang-section { margin-top: 20px; }
-.lang-section h4 { margin-top: 0; margin-bottom: 10px; font-size: 0.95em; color: #586069; }
-.lang-bar { display: flex; height: 10px; border-radius: 6px; overflow: hidden; background-color: #eee; margin-bottom: 10px; }
-.lang-segment { height: 100%; transition: width 0.5s ease; }
-.lang-segment:first-child { border-top-left-radius: 6px; border-bottom-left-radius: 6px; }
-.lang-segment:last-child { border-top-right-radius: 6px; border-bottom-right-radius: 6px; }
-.lang-legend { display: flex; flex-wrap: wrap; gap: 15px; }
-.legend-item { display: flex; align-items: center; font-size: 0.85em; color: #586069; }
-.legend-dot { width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
-.legend-text { font-weight: 500; }
-.report-btn { display: inline-block; background-color: #6c5ce7; color: white; padding: 8px 16px; border-radius: 4px; text-decoration: none; margin-bottom: 10px; font-weight: bold; }
-.report-btn:hover { background-color: #5b4cc4; }
-.animation-section { max-width: 1000px; margin: 50px auto 30px; padding: 20px; border-top: 2px solid #eee; text-align: center; }
-.lottie-container { width: 100%; max-width: 400px; height: 400px; margin: 0 auto; }
+/* ---------------- 装饰性元素 ---------------- */
+.decorative-circle {
+  position: absolute;
+  top: -20px;
+  right: -20px;
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  opacity: 0.1;
+  z-index: 0;
+}
 
-/* -------------------------------------------
-   [任务 4] 新增的图表弹窗样式
-   ------------------------------------------- */
-.analysis-modal-visual {
-    width: 90%;
-    max-width: 900px; /* 更宽，放图表 */
-    background: #fdfdfd;
+/* ---------------- 卡片特效 ---------------- */
+.repo-card {
+    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
 }
-.visual-header {
-    text-align: center;
-    margin-bottom: 20px;
-    padding-bottom: 10px;
-    border-bottom: 1px dashed #eee;
+.repo-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 8px 16px rgba(0,0,0,0.08) !important;
 }
-.summary-box {
-    font-size: 1.1em;
-    color: #455a64;
-    font-style: italic;
-    margin-bottom: 10px;
+
+/* ---------------- 列表交互特效 ---------------- */
+.list-item-hover {
+    transition: background-color 0.2s;
+    border: 1px solid transparent;
 }
-.quote-icon {
-    font-size: 1.5em;
-    color: #b0bec5;
-    vertical-align: middle;
+.list-item-hover:hover {
+    background-color: #f5f5f5 !important;
+    border-color: #e0e0e0;
 }
-.keywords-box {
-    display: flex;
-    justify-content: center;
-    gap: 8px;
-    flex-wrap: wrap;
+
+/* ---------------- Sticky Profile ---------------- */
+.sticky-card {
+    position: sticky;
+    top: 20px; 
 }
-.keyword-tag {
-    background: #e3f2fd;
-    color: #1565c0;
-    padding: 4px 10px;
-    border-radius: 12px;
-    font-size: 0.85em;
-    font-weight: bold;
+
+/* ---------------- Markdown 美化 ---------------- */
+.markdown-body {
+    font-family: 'Roboto', sans-serif;
+    line-height: 1.6;
+    color: #424242;
 }
-.charts-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-    gap: 20px;
+.markdown-body :deep(h1), .markdown-body :deep(h2) {
+    border-bottom: 1px solid #eaecef;
+    padding-bottom: .3em;
+    margin-bottom: 16px;
 }
-.chart-card {
-    background: #fff;
-    border: 1px solid #f0f0f0;
-    border-radius: 8px;
-    padding: 10px;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.02);
+.markdown-body :deep(pre) {
+    background-color: #f6f8fa;
+    border-radius: 6px;
+    padding: 16px;
+    overflow: auto;
 }
-.chart-card h4 {
-    text-align: center;
-    margin: 5px 0 10px 0;
-    color: #546e7a;
-    font-size: 0.95em;
-}
-.chart-box {
-    width: 100%;
-}
-.ai-analyze-btn {
+
+/* ---------------- 自定义渐变背景 ---------------- */
+.bg-gradient-primary {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white; border: none; padding: 12px 24px; border-radius: 50px; font-size: 16px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.2); transition: transform 0.2s, box-shadow 0.2s; width: 80%; margin-bottom: 5px;
 }
-.ai-analyze-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.3); }
-.ai-analyze-btn:disabled { opacity: 0.7; cursor: wait; background: #999; }
 </style>
