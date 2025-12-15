@@ -1,41 +1,105 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, watch } from 'vue';
 import axios from 'axios';
+import { useDisplay } from 'vuetify';
 
 // ----------------------------------------
-// State
+// State & Logic (保持核心业务逻辑不变)
 // ----------------------------------------
 const wishes = ref([]);
 const loading = ref(true);
-const errorMessage = ref('');
-const currentUser = ref(null); // 存储当前用户信息
-const userTotalStars = ref(0); // 前端计算的用户总 Star 数
+const errorMessage = ref(''); // 这里的错误主要用于列表加载失败的展示，不冲突
+const currentUser = ref(null);
+const userTotalStars = ref(0);
 
-// 新增表单数据
+// 表单相关
 const newWishUrl = ref('');
 const newTargetPrice = ref('');
-const newConditionType = ref(''); // 选中的解锁条件类型
-const newTargetValue = ref('');   // 目标数值
+const newConditionType = ref('');
+const newTargetValue = ref('');
 const addMessage = ref('');
+const showAddDialog = ref(false);
 
-// 解锁条件的选项
+// ----------------------------------------
+// [NEW] 全局提示与确认框状态 (替换 alert/confirm)
+// ----------------------------------------
+// 1. Snackbar (Toast提示) 状态
+const snackbar = ref({
+  show: false,
+  text: '',
+  color: 'primary',
+  icon: 'mdi-information'
+});
+
+// 2. 删除确认框状态
+const deleteDialog = ref(false);
+const wishToDeleteId = ref(null);
+const deleteLoading = ref(false);
+
+// 辅助函数：显示提示
+const showToast = (text, type = 'success') => {
+  const config = {
+    success: { color: 'success', icon: 'mdi-check-circle' },
+    error: { color: 'error', icon: 'mdi-alert-circle' },
+    info: { color: 'primary', icon: 'mdi-information' }
+  };
+  const theme = config[type] || config.info;
+  
+  snackbar.value = {
+    show: true,
+    text: text,
+    color: theme.color,
+    icon: theme.icon
+  };
+};
+
 const conditionOptions = [
-    { label: '无 (直接解锁)', value: '' },
-    { label: '本周代码提交次数 (Weekly Commits)', value: 'weekly_commits' },
-    { label: 'GitHub 仓库获赞数 (Total Stars)', value: 'total_stars' }
+    { title: '无 (直接解锁)', value: '' },
+    { title: '本周代码提交次数 (Weekly Commits)', value: 'weekly_commits' },
+    { title: 'GitHub 仓库获赞数 (Total Stars)', value: 'total_stars' }
 ];
+
+// 响应式布局工具
+const { name } = useDisplay();
+
+// ----------------------------------------
+// 分页/轮播逻辑 (保持不变)
+// ----------------------------------------
+const currentPage = ref(0);
+const itemsPerPage = computed(() => {
+    switch (name.value) {
+        case 'xs': return 1;
+        case 'sm': return 2;
+        default: return 3;
+    }
+});
+const totalPages = computed(() => Math.ceil(wishes.value.length / itemsPerPage.value));
+const visibleWishes = computed(() => {
+    const start = currentPage.value * itemsPerPage.value;
+    const end = start + itemsPerPage.value;
+    return wishes.value.slice(start, end);
+});
+const nextPage = () => {
+    if (currentPage.value < totalPages.value - 1) currentPage.value++;
+};
+const prevPage = () => {
+    if (currentPage.value > 0) currentPage.value--;
+};
+watch([wishes, itemsPerPage], () => {
+    if (currentPage.value >= totalPages.value) {
+        currentPage.value = Math.max(0, totalPages.value - 1);
+    }
+});
 
 // ----------------------------------------
 // API Actions
 // ----------------------------------------
 
-// 1. 获取当前用户信息 (为了拿到用户名去查 GitHub 数据)
 const fetchUserInfo = async () => {
     try {
         const res = await axios.get('/api/user/info');
         currentUser.value = res.data;
-        // 拿到用户名后，顺便去查一下他的 GitHub 仓库数据，算一下总 Stars
-        if (currentUser.value && currentUser.value.username) {
+        if (currentUser.value?.username) {
             fetchUserStars(currentUser.value.username);
         }
     } catch (error) {
@@ -43,27 +107,22 @@ const fetchUserInfo = async () => {
     }
 };
 
-// 2. [前端补位] 获取用户仓库并计算总 Stars (因为心愿列表API没返回当前进度)
 const fetchUserStars = async (username) => {
     try {
-        // 调用 devinfo 组的接口
         const res = await axios.get(`/api/devinfo/repos/${username}`);
         const repos = res.data.data || [];
-        // 累加所有仓库的 stars
-        const total = repos.reduce((sum, repo) => sum + (repo.stars || 0), 0);
-        userTotalStars.value = total;
+        userTotalStars.value = repos.reduce((sum, repo) => sum + (repo.stars || 0), 0);
     } catch (error) {
         console.error("获取Star数据失败", error);
     }
 };
 
-// 3. 获取心愿单列表
 const fetchWishes = async () => {
     loading.value = true;
     errorMessage.value = '';
     try {
         const response = await axios.get('/api/wishlist/'); 
-        wishes.value = response.data.data;
+        wishes.value = response.data.data || [];
     } catch (error) {
         errorMessage.value = error.response?.data?.message || '获取心愿单失败，请检查登录状态或网络。';
     } finally {
@@ -71,10 +130,8 @@ const fetchWishes = async () => {
     }
 };
 
-// 4. 添加新心愿 (支持解锁条件)
 const addNewWish = async () => {
     addMessage.value = '';
-    errorMessage.value = '';
     
     if (!newWishUrl.value || !newTargetPrice.value) {
         addMessage.value = 'URL和期望价格不能为空。';
@@ -82,7 +139,6 @@ const addNewWish = async () => {
     }
 
     try {
-        // 构造请求体，包含新增的 condition 字段
         const payload = {
             url: newWishUrl.value,
             target_price: parseFloat(newTargetPrice.value),
@@ -90,15 +146,16 @@ const addNewWish = async () => {
             target_value: newTargetValue.value ? parseInt(newTargetValue.value) : 0
         };
 
-        const response = await axios.post('/api/wishlist/', payload);
+        await axios.post('/api/wishlist/', payload);
 
-        addMessage.value = response.data.message || '心愿添加成功！';
-        
-        // 重置表单
         newWishUrl.value = '';
         newTargetPrice.value = '';
         newConditionType.value = '';
         newTargetValue.value = '';
+        showAddDialog.value = false;
+        
+        // [MODIFIED] 使用 Toast 替代可能的默认行为或静默
+        showToast('新愿望已添加！为了目标冲刺吧！', 'success');
         
         await fetchWishes(); 
 
@@ -107,25 +164,48 @@ const addNewWish = async () => {
     }
 };
 
-// 5. 删除心愿
-const deleteWish = async (wish_id) => {
-    if(!confirm('确定要删除这个心愿吗？')) return;
+// [MODIFIED] 1. 点击删除图标的操作：只打开弹窗
+const openDeleteConfirm = (wish_id) => {
+    wishToDeleteId.value = wish_id;
+    deleteDialog.value = true;
+};
+
+// [MODIFIED] 2. 真正的删除动作：在弹窗点击确认后执行
+const confirmDelete = async () => {
+    if (!wishToDeleteId.value) return;
+    
+    deleteLoading.value = true;
     try {
-        await axios.delete(`/api/wishlist/${wish_id}`);
-        wishes.value = wishes.value.filter(w => w.wish_id !== wish_id);
+        await axios.delete(`/api/wishlist/${wishToDeleteId.value}`);
+        // 本地更新列表
+        wishes.value = wishes.value.filter(w => w.wish_id !== wishToDeleteId.value);
+        
+        // 关闭弹窗并提示成功
+        deleteDialog.value = false;
+        showToast('心愿已删除', 'success');
     } catch (error) {
-        errorMessage.value = error.response?.data?.message || '删除失败。';
+        // 关闭弹窗并提示失败
+        deleteDialog.value = false;
+        showToast(error.response?.data?.message || '删除失败', 'error');
+    } finally {
+        deleteLoading.value = false;
+        wishToDeleteId.value = null;
     }
 };
 
-// 6. [核心] 手动检查解锁状态
+// [MODIFIED] 检查解锁状态：替换 Alert
 const checkUnlockStatus = async () => {
+    // 可以加一个临时的加载提示
+    showToast('正在同步 GitHub 数据...', 'info');
+    
     try {
         const res = await axios.post('/api/wishlist/check-status');
-        alert(res.data.message); // 弹出后端返回的提示，比如“恭喜解锁！”
-        await fetchWishes();     // 刷新列表看最新状态
+        // 成功提示
+        showToast(res.data.message || '状态同步完成！', 'success');
+        await fetchWishes();
     } catch (error) {
-        alert(error.response?.data?.message || '检查失败');
+        // 失败提示
+        showToast(error.response?.data?.message || '检查失败', 'error');
     }
 };
 
@@ -133,7 +213,6 @@ const checkUnlockStatus = async () => {
 // Helper Logic
 // ----------------------------------------
 
-// 计算进度条百分比
 const getProgress = (wish) => {
     if (wish.is_unlocked) return 100;
     if (!wish.unlock_condition_type) return 100;
@@ -141,214 +220,448 @@ const getProgress = (wish) => {
     let current = 0;
     const target = wish.unlock_target_value || 1;
 
-    // 根据不同类型获取当前值
     if (wish.unlock_condition_type === 'total_stars') {
-        current = userTotalStars.value; // 使用我们前端算出来的总 Star
-    } else if (wish.unlock_condition_type === 'weekly_commits') {
-        // 后端没返回这个数据，我们暂时没法准确显示“当前Commit数”
-        // 所以这里返回 0，或者你可以做一个模拟
-        current = 0; 
+        current = userTotalStars.value;
     }
+    // weekly_commits 暂无实时数据，默认为0
 
     let percent = (current / target) * 100;
     return Math.min(100, Math.max(0, percent));
 };
 
-// 获取进度文本提示
 const getProgressText = (wish) => {
     if (wish.is_unlocked) return '已解锁';
-    
     if (wish.unlock_condition_type === 'total_stars') {
-        return `当前 Stars: ${userTotalStars.value} / 目标: ${wish.unlock_target_value}`;
+        return `当前: ${userTotalStars.value} Stars / 目标: ${wish.unlock_target_value}`;
     }
     if (wish.unlock_condition_type === 'weekly_commits') {
-        return `需本周提交代码 ${wish.unlock_target_value} 次 (请点击检查按钮刷新)`;
+        return `需本周提交 ${wish.unlock_target_value} 次`;
     }
     return '进行中';
 };
 
-// ----------------------------------------
-// Lifecycle
-// ----------------------------------------
 onMounted(async () => {
-    await fetchUserInfo(); // 先拿用户信息
-    await fetchWishes();   // 再拿心愿单
+    await fetchUserInfo();
+    await fetchWishes();
 });
 </script>
 
 <template>
-  <div class="wishlist-container">
-    <div class="header-section">
-        <h1>我的心愿单 🎮</h1>
-        <button @click="checkUnlockStatus" class="check-btn">🔄 检查我的成就</button>
+  <v-container fluid class="fill-height align-start pa-0 bg-surface-light">
+    
+    <div class="hero-section w-100 py-2 px-4 px-md-16 bg-white">
+      <v-container style="max-width: 1400px;">
+        <v-row align="center" justify="space-between">
+          <v-col cols="12" md="6" class="pr-md-10">
+            <div class="animate__animated animate__fadeInLeft">
+              <v-chip color="secondary" variant="flat" size="small" class="mb-4 font-weight-bold">
+                WISHwithCODE
+              </v-chip>
+              <h1 class="text-h3 font-weight-black text-primary mb-4" style="line-height: 1.2;">
+                让心愿与代码<br/>一同成长
+              </h1>
+              <p class="text-h6 text-grey-darken-1 mb-8" style="line-height: 1.6;">
+                这是属于开发者的专属心愿单。设定目标，追踪代码贡献，当你的技术影响力（Stars/Commits）达成成就时，奖励自己心仪已久的礼物。
+              </p>
+              
+              <div class="d-flex flex-wrap gap-4">
+                <v-dialog v-model="showAddDialog" max-width="600">
+                  <template v-slot:activator="{ props }">
+                    <v-btn
+                      v-bind="props"
+                      color="primary"
+                      size="x-large"
+                      elevation="4"
+                      rounded="lg"
+                      prepend-icon="mdi-plus-circle"
+                    >
+                      添加新心愿
+                    </v-btn>
+                  </template>
+                  
+                  <v-card class="rounded-xl">
+                    <v-card-title class="text-h5 pa-6 pb-0 font-weight-bold">添加心愿清单</v-card-title>
+                    <v-card-text class="pa-6">
+                      <v-form @submit.prevent="addNewWish">
+                        <v-text-field
+                          v-model="newWishUrl"
+                          label="商品链接 (支持 Steam/京东/淘宝)"
+                          prepend-inner-icon="mdi-link-variant"
+                          variant="outlined"
+                          color="primary"
+                          class="mb-3"
+                        ></v-text-field>
+                        
+                        <v-text-field
+                          v-model="newTargetPrice"
+                          label="期望价格 (¥)"
+                          type="number"
+                          prefix="¥"
+                          step="0.01"
+                          prepend-inner-icon="mdi-currency-usd"
+                          variant="outlined"
+                          color="primary"
+                          class="mb-3"
+                        ></v-text-field>
+
+                        <v-select
+                          v-model="newConditionType"
+                          :items="conditionOptions"
+                          label="解锁挑战 (可选)"
+                          prepend-inner-icon="mdi-trophy-outline"
+                          variant="outlined"
+                          color="primary"
+                          class="mb-3"
+                        ></v-select>
+
+                        <v-expand-transition>
+                          <div v-if="newConditionType">
+                            <v-text-field
+                              v-model="newTargetValue"
+                              label="挑战目标数值"
+                              type="number"
+                              prepend-inner-icon="mdi-flag-checkered"
+                              variant="outlined"
+                              color="secondary"
+                              hint="例如：达到 100 个 Star 后自动解锁"
+                              persistent-hint
+                            ></v-text-field>
+                          </div>
+                        </v-expand-transition>
+
+                        <v-alert v-if="addMessage" type="warning" variant="tonal" class="mt-4" icon="mdi-alert">
+                          {{ addMessage }}
+                        </v-alert>
+                      </v-form>
+                    </v-card-text>
+                    <v-card-actions class="pa-6 pt-0 justify-end">
+                      <v-btn variant="text" size="large" @click="showAddDialog = false">取消</v-btn>
+                      <v-btn color="primary" variant="flat" size="large" @click="addNewWish">确认添加</v-btn>
+                    </v-card-actions>
+                  </v-card>
+                </v-dialog>
+
+                <v-btn
+                  variant="outlined"
+                  size="x-large"
+                  rounded="lg"
+                  color="grey-darken-3"
+                  prepend-icon="mdi-refresh"
+                  @click="checkUnlockStatus"
+                >
+                  刷新成就状态
+                </v-btn>
+              </div>
+            </div>
+          </v-col>
+
+          <v-col cols="12" md="6" class="position-relative">
+            <v-card
+              elevation="20"
+              rounded="xl"
+              class="hero-image-card animate__animated animate__fadeInRight"
+              max-height="300"
+            >
+              <v-img
+                src="/img/back.jpg" 
+                cover
+                height="100%"
+                min-height="400"
+                class="align-end"
+              >
+                <template v-slot:placeholder>
+                  <div class="d-flex align-center justify-center fill-height bg-grey-lighten-4">
+                    <v-progress-circular indeterminate color="grey-lighten-2"></v-progress-circular>
+                  </div>
+                </template>
+              </v-img>
+            </v-card>
+            <div class="decorative-circle bg-secondary"></div>
+          </v-col>
+        </v-row>
+      </v-container>
     </div>
 
-    <p v-if="errorMessage" class="error-message">{{ errorMessage }}</p>
-
-    <div class="add-wish-form">
-      <h3>✨ 添加新心愿</h3>
-      <form @submit.prevent="addNewWish">
-        <div class="form-row">
-            <input 
-              type="text" 
-              v-model="newWishUrl" 
-              placeholder="商品链接 (e.g., Steam URL)" 
-              required
-              class="input-large"
-            />
-            <input 
-              type="number" 
-              v-model="newTargetPrice" 
-              placeholder="期望价格 (¥)" 
-              step="0.01" 
-              required
-              class="input-small"
-            />
+    <v-container style="max-width: 1400px;" class="py-12">
+      <div class="d-flex align-center justify-space-between mb-8">
+        <div>
+          <h2 class="text-h4 font-weight-bold text-grey-darken-3">我的清单</h2>
+          <div class="text-subtitle-1 text-grey">
+            当前共有 {{ wishes.length }} 个心愿 · 
+            <span class="text-primary font-weight-bold">{{ wishes.filter(w => w.is_unlocked).length }}</span> 个已解锁
+          </div>
         </div>
         
-        <div class="form-row condition-row">
-            <select v-model="newConditionType" class="select-condition">
-                <option disabled value="">-- 选择解锁条件 (可选) --</option>
-                <option v-for="opt in conditionOptions" :key="opt.value" :value="opt.value">
-                    {{ opt.label }}
-                </option>
-            </select>
-
-            <input 
-                v-if="newConditionType"
-                type="number" 
-                v-model="newTargetValue" 
-                placeholder="目标数值 (如: 10)" 
-                required
-                class="input-small"
-            />
-        </div>
-
-        <button type="submit" class="submit-btn">添加心愿</button>
-      </form>
-      <p v-if="addMessage" :class="{'success-message': addMessage.includes('成功'), 'error-message': !addMessage.includes('成功')}">
-        {{ addMessage }}
-      </p>
-    </div>
-    
-    <div v-if="loading">加载中...</div>
-    <div v-else-if="wishes.length === 0">心愿单为空，快去添加商品吧！</div>
-    
-    <div v-else class="wish-list">
-      <div v-for="wish in wishes" :key="wish.wish_id" class="wish-item" :class="{ 'locked-item': !wish.is_unlocked }">
-        
-        <div v-if="!wish.is_unlocked" class="lock-badge">🔒 锁定中</div>
-
-        <div class="item-main">
-            <div class="item-info">
-                <img :src="wish.image_url" alt="商品图片" class="item-image" />
-                <div class="text-info">
-                    <h4 class="item-title" :title="wish.title">{{ wish.title }}</h4>
-                    <p class="platform-tag">{{ wish.platform.toUpperCase() }}</p>
-                    <a :href="wish.original_url" target="_blank" class="link-text">原始链接</a>
-                </div>
-            </div>
-            
-            <div class="price-info">
-                <div class="price-row">
-                    <span>期望: ¥{{ wish.target_price.toFixed(2) }}</span>
-                    <span :class="{'price-ok': wish.status === '低于目标', 'price-bad': wish.status === '高于目标'}">
-                        现价: ¥{{ wish.latest_price !== null ? wish.latest_price.toFixed(2) : 'N/A' }}
-                    </span>
-                </div>
-            </div>
-        </div>
-
-        <div v-if="wish.unlock_condition_type" class="progress-section">
-            <div class="progress-info">
-                <small>{{ getProgressText(wish) }}</small>
-            </div>
-            <div class="progress-bar-bg">
-                <div 
-                    class="progress-bar-fill" 
-                    :style="{ width: getProgress(wish) + '%', backgroundColor: wish.is_unlocked ? '#42b983' : '#f1c40f' }"
-                ></div>
-            </div>
-        </div>
-        
-        <div class="action-row">
-            <button @click="deleteWish(wish.wish_id)" class="delete-button">删除</button>
+        <div class="d-flex gap-2" v-if="wishes.length > 0">
+          <v-btn 
+            icon="mdi-chevron-left" 
+            variant="tonal" 
+            :disabled="currentPage === 0"
+            @click="prevPage"
+          ></v-btn>
+          <v-btn 
+            icon="mdi-chevron-right" 
+            variant="tonal"
+            :disabled="currentPage >= totalPages - 1"
+            @click="nextPage"
+          ></v-btn>
         </div>
       </div>
-    </div>
-  </div>
+
+      <v-alert v-if="errorMessage" type="error" variant="tonal" class="mb-6">{{ errorMessage }}</v-alert>
+
+      <div v-if="loading" class="d-flex justify-center pa-12">
+        <v-progress-circular indeterminate color="primary" size="64"></v-progress-circular>
+      </div>
+
+      <v-sheet v-else-if="wishes.length === 0" class="text-center pa-12 rounded-xl border bg-white">
+        <v-icon icon="mdi-gift-open-outline" size="80" color="grey-lighten-2" class="mb-4"></v-icon>
+        <h3 class="text-h6 text-grey">暂时没有心愿，快去添加吧！</h3>
+      </v-sheet>
+
+      <v-window v-else v-model="currentPage" class="wish-window overflow-visible">
+        <v-window-item
+          v-for="n in totalPages"
+          :key="n"
+          :value="n - 1"
+          class="pa-2"
+        >
+          <v-row>
+            <v-col
+              v-for="wish in visibleWishes"
+              :key="wish.wish_id"
+              cols="12"
+              sm="6"
+              md="4"
+            >
+              <v-card
+                class="wish-card h-60 rounded-xl"
+                elevation="3"
+                border
+              >
+                <div class="position-relative">
+                  <v-img
+                    :src="wish.image_url"
+                    height="120"
+                    cover
+                    class="align-start justify-end pa-2"
+                  >
+                    <v-chip
+                      v-if="!wish.is_unlocked"
+                      color="grey-darken-4"
+                      prepend-icon="mdi-lock"
+                      variant="flat"
+                      size="small"
+                      class="font-weight-bold"
+                    >
+                      锁定中
+                    </v-chip>
+                    <v-chip
+                      v-else
+                      color="success"
+                      prepend-icon="mdi-lock-open-check"
+                      variant="flat"
+                      size="small"
+                      class="font-weight-bold"
+                    >
+                      可购买
+                    </v-chip>
+                  </v-img>
+                  
+                  <div class="platform-badge bg-surface elevation-2">
+                    <span class="text-caption font-weight-black">{{ wish.platform }}</span>
+                  </div>
+                </div>
+
+                <v-card-item class="pt-5">
+                  <v-card-title class="text-h6 font-weight-bold text-truncate mb-1">
+                    {{ wish.title }}
+                  </v-card-title>
+                  <v-card-subtitle>
+                    <div class="d-flex align-center justify-space-between mt-1">
+                      <div>
+                        <span class="text-caption text-grey mr-2">期望</span>
+                        <span class="text-body-1 font-weight-bold">¥{{ wish.target_price.toFixed(2) }}</span>
+                      </div>
+                      <div class="text-right">
+                        <span class="text-caption text-grey mr-2">当前</span>
+                        <span 
+                          class="text-h6 font-weight-black"
+                          :class="wish.status === '低于目标' ? 'text-green-darken-1' : 'text-red-darken-1'"
+                        >
+                          {{ wish.latest_price ? `¥${wish.latest_price.toFixed(2)}` : '???' }}
+                        </span>
+                      </div>
+                    </div>
+                  </v-card-subtitle>
+                </v-card-item>
+
+                <v-divider class="mx-4"></v-divider>
+
+                <v-card-text class="py-3">
+                  <div v-if="wish.unlock_condition_type">
+                    <div class="d-flex justify-space-between text-caption mb-1 text-medium-emphasis">
+                      <span>解锁进度</span>
+                      <span>{{ Math.round(getProgress(wish)) }}%</span>
+                    </div>
+                    <v-progress-linear
+                      :model-value="getProgress(wish)"
+                      :color="wish.is_unlocked ? 'success' : 'amber-darken-2'"
+                      height="8"
+                      rounded
+                      striped
+                    ></v-progress-linear>
+                    <div class="text-caption text-grey mt-2 d-flex align-center">
+                      <v-icon icon="mdi-target" size="x-small" class="mr-1"></v-icon>
+                      {{ getProgressText(wish) }}
+                    </div>
+                  </div>
+                  <div v-else class="text-caption text-success d-flex align-center py-2">
+                    <v-icon icon="mdi-check-decagram" size="small" class="mr-2"></v-icon>
+                    无条件限制，随时奖励自己！
+                  </div>
+                </v-card-text>
+
+                <v-card-actions class="pa-4 pt-0">
+                  <v-btn
+                    block
+                    :variant="wish.is_unlocked ? 'flat' : 'outlined'"
+                    :color="wish.is_unlocked ? 'primary' : 'grey'"
+                    :href="wish.original_url"
+                    target="_blank"
+                    prepend-icon="mdi-cart-outline"
+                    class="rounded-lg"
+                  >
+                    {{ wish.is_unlocked ? '立即购买' : '查看详情' }}
+                  </v-btn>
+                  
+                  <v-btn
+                    density="comfortable"
+                    icon="mdi-trash-can-outline"
+                    variant="text"
+                    color="grey"
+                    class="position-absolute bottom-0 right-0 ma-4"
+                    style="z-index: 2;"
+                    @click.stop="openDeleteConfirm(wish.wish_id)" 
+                  ></v-btn>
+                </v-card-actions>
+              </v-card>
+            </v-col>
+          </v-row>
+        </v-window-item>
+      </v-window>
+    </v-container>
+
+    <v-dialog v-model="deleteDialog" max-width="400">
+      <v-card class="rounded-xl pa-2 text-center">
+        <v-card-text class="pt-6">
+          <v-avatar color="red-lighten-5" size="80" class="mb-4">
+            <v-icon icon="mdi-alert-circle-outline" size="48" color="error"></v-icon>
+          </v-avatar>
+          <h3 class="text-h6 font-weight-bold mb-2">确定要删除吗？</h3>
+          <p class="text-body-2 text-grey">
+            删除后无法恢复，该心愿的进度也将被清空。
+          </p>
+        </v-card-text>
+        <v-card-actions class="justify-center pb-6 px-6 gap-2">
+          <v-btn 
+            variant="outlined" 
+            class="flex-grow-1 rounded-lg" 
+            size="large"
+            :disabled="deleteLoading"
+            @click="deleteDialog = false"
+          >
+            再想想
+          </v-btn>
+          <v-btn 
+            color="error" 
+            variant="flat" 
+            class="flex-grow-1 rounded-lg" 
+            size="large"
+            :loading="deleteLoading"
+            @click="confirmDelete"
+          >
+            确认删除
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <v-snackbar
+      v-model="snackbar.show"
+      :color="snackbar.color"
+      location="top"
+      rounded="pill"
+      :timeout="3000"
+      elevation="6"
+    >
+      <div class="d-flex align-center">
+        <v-icon :icon="snackbar.icon" class="mr-2"></v-icon>
+        <span class="font-weight-medium">{{ snackbar.text }}</span>
+      </div>
+      <template v-slot:actions>
+        <v-btn
+          icon="mdi-close"
+          variant="text"
+          size="small"
+          @click="snackbar.show = false"
+        ></v-btn>
+      </template>
+    </v-snackbar>
+
+  </v-container>
 </template>
 
 <style scoped>
-.wishlist-container { max-width: 1000px; margin: 30px auto; padding: 0 20px; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; }
-.header-section { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-.check-btn { background-color: #3498db; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; font-weight: bold; }
-.check-btn:hover { background-color: #2980b9; }
-
-/* 表单样式 */
-.add-wish-form { margin-bottom: 30px; padding: 25px; border: 1px solid #e0e0e0; border-radius: 8px; background-color: #f9f9f9; }
-.form-row { display: flex; gap: 10px; margin-bottom: 15px; }
-.input-large { flex: 2; padding: 10px; border: 1px solid #ccc; border-radius: 4px; }
-.input-small { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 4px; }
-.select-condition { flex: 2; padding: 10px; border: 1px solid #ccc; border-radius: 4px; }
-.submit-btn { width: 100%; padding: 12px; background-color: #2c3e50; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
-.submit-btn:hover { background-color: #1a252f; }
-
-/* 列表样式 */
-.wish-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
-.wish-item {
-    border: 1px solid #eee;
-    border-radius: 10px;
-    padding: 15px;
-    background: white;
-    box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    position: relative;
-    overflow: hidden;
-    transition: transform 0.2s;
+/* 保持原有样式不变 */
+.hero-image-card {
+  transform: rotate(-2deg);
+  transition: transform 0.3s ease;
+  border: 4px solid white;
 }
-.wish-item:hover { transform: translateY(-2px); box-shadow: 0 6px 12px rgba(0,0,0,0.1); }
-
-/* 锁定样式 */
-.locked-item { background-color: #fcfcfc; border-color: #ddd; }
-.locked-item .item-image { filter: grayscale(80%); }
-.lock-badge {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    background: rgba(0,0,0,0.6);
-    color: white;
-    padding: 4px 8px;
-    border-radius: 12px;
-    font-size: 12px;
-    z-index: 2;
+.hero-image-card:hover {
+  transform: rotate(0deg) scale(1.02);
 }
 
-.item-main { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
-.item-info { display: flex; align-items: flex-start; }
-.item-image { width: 70px; height: 70px; object-fit: cover; border-radius: 6px; margin-right: 12px; }
-.text-info { overflow: hidden; }
-.item-title { margin: 0 0 5px 0; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.platform-tag { font-size: 12px; color: #7f8c8d; margin: 0; display: inline-block; background: #eee; padding: 2px 6px; border-radius: 4px; }
-.link-text { font-size: 12px; color: #3498db; text-decoration: none; margin-left: 5px; }
+.decorative-circle {
+  position: absolute;
+  top: -20px;
+  right: -20px;
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  opacity: 0.1;
+  z-index: -1;
+}
 
-.price-info { font-size: 14px; background: #f8f9fa; padding: 8px; border-radius: 4px; }
-.price-row { display: flex; justify-content: space-between; }
-.price-ok { color: #27ae60; font-weight: bold; }
-.price-bad { color: #e74c3c; }
+.gap-2 { gap: 8px; }
+.gap-4 { gap: 16px; }
 
-/* 进度条样式 */
-.progress-section { margin-bottom: 10px; }
-.progress-info { display: flex; justify-content: space-between; font-size: 12px; color: #666; margin-bottom: 4px; }
-.progress-bar-bg { width: 100%; height: 8px; background-color: #ecf0f1; border-radius: 4px; overflow: hidden; }
-.progress-bar-fill { height: 100%; transition: width 0.5s ease; }
+/* 平台标签样式 */
+.platform-badge {
+  position: absolute;
+  bottom: 0;
+  left: 16px;
+  transform: translateY(50%);
+  padding: 4px 12px;
+  border-radius: 20px;
+  border: 1px solid rgba(0,0,0,0.05);
+}
 
-.action-row { text-align: right; }
-.delete-button { background: none; border: none; color: #95a5a6; cursor: pointer; font-size: 12px; text-decoration: underline; }
-.delete-button:hover { color: #e74c3c; }
+/* 卡片悬浮效果 */
+.wish-card {
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+.wish-card:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 14px 28px rgba(0,0,0,0.15), 0 10px 10px rgba(0,0,0,0.12) !important;
+}
 
-.error-message { color: #e74c3c; background: #fadbd8; padding: 10px; border-radius: 4px; }
-.success-message { color: #27ae60; background: #d5f5e3; padding: 10px; border-radius: 4px; }
+/* 解决 v-window 的 overflow 问题 */
+.wish-window {
+  overflow: visible !important;
+}
+:deep(.v-window__container) {
+  overflow: visible !important;
+}
 </style>

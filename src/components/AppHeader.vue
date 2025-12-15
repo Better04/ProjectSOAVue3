@@ -14,7 +14,7 @@ const handleLogout = async () => {
 <template>
     <header class="main-header">
         <div class="logo">
-            <router-link to="/">🌟 DevLife 开发者</router-link>
+            <router-link to="/"> DevLife 开发者</router-link>
         </div>
         <nav class="nav-links">
             <router-link to="/devinfo">GitHub分析</router-link>

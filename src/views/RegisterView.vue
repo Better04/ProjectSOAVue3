@@ -211,13 +211,13 @@ const handleRegister = async () => {
 
 /* 登录/注册按钮样式 */
 .login-button {
-  background-color: #e67e22 !important; /* Gitee 橙色 */
+  background-color: #23a6d5 !important; /* Gitee 橙色 */
   color: white !important;
   font-weight: bold;
 }
 
 .login-button:hover {
-  background-color: #d35400 !important;
+  background-color: #23a6d5 !important;
 }
 
 /* 链接通用样式 */
