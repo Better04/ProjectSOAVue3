@@ -8,7 +8,7 @@ import { useDisplay } from 'vuetify';
 // ----------------------------------------
 const wishes = ref([]);
 const loading = ref(true);
-const errorMessage = ref(''); // 这里的错误主要用于列表加载失败的展示，不冲突
+const errorMessage = ref(''); 
 const currentUser = ref(null);
 const userTotalStars = ref(0);
 
@@ -21,7 +21,7 @@ const addMessage = ref('');
 const showAddDialog = ref(false);
 
 // ----------------------------------------
-// [NEW] 全局提示与确认框状态 (替换 alert/confirm)
+// [NEW] 全局提示与确认框状态
 // ----------------------------------------
 // 1. Snackbar (Toast提示) 状态
 const snackbar = ref({
@@ -63,7 +63,7 @@ const conditionOptions = [
 const { name } = useDisplay();
 
 // ----------------------------------------
-// 分页/轮播逻辑 (保持不变)
+// 分页/轮播逻辑
 // ----------------------------------------
 const currentPage = ref(0);
 const itemsPerPage = computed(() => {
@@ -154,7 +154,6 @@ const addNewWish = async () => {
         newTargetValue.value = '';
         showAddDialog.value = false;
         
-        // [MODIFIED] 使用 Toast 替代可能的默认行为或静默
         showToast('新愿望已添加！为了目标冲刺吧！', 'success');
         
         await fetchWishes(); 
@@ -164,27 +163,22 @@ const addNewWish = async () => {
     }
 };
 
-// [MODIFIED] 1. 点击删除图标的操作：只打开弹窗
 const openDeleteConfirm = (wish_id) => {
     wishToDeleteId.value = wish_id;
     deleteDialog.value = true;
 };
 
-// [MODIFIED] 2. 真正的删除动作：在弹窗点击确认后执行
 const confirmDelete = async () => {
     if (!wishToDeleteId.value) return;
     
     deleteLoading.value = true;
     try {
         await axios.delete(`/api/wishlist/${wishToDeleteId.value}`);
-        // 本地更新列表
         wishes.value = wishes.value.filter(w => w.wish_id !== wishToDeleteId.value);
         
-        // 关闭弹窗并提示成功
         deleteDialog.value = false;
         showToast('心愿已删除', 'success');
     } catch (error) {
-        // 关闭弹窗并提示失败
         deleteDialog.value = false;
         showToast(error.response?.data?.message || '删除失败', 'error');
     } finally {
@@ -193,18 +187,13 @@ const confirmDelete = async () => {
     }
 };
 
-// [MODIFIED] 检查解锁状态：替换 Alert
 const checkUnlockStatus = async () => {
-    // 可以加一个临时的加载提示
     showToast('正在同步 GitHub 数据...', 'info');
-    
     try {
         const res = await axios.post('/api/wishlist/check-status');
-        // 成功提示
         showToast(res.data.message || '状态同步完成！', 'success');
         await fetchWishes();
     } catch (error) {
-        // 失败提示
         showToast(error.response?.data?.message || '检查失败', 'error');
     }
 };
@@ -223,7 +212,6 @@ const getProgress = (wish) => {
     if (wish.unlock_condition_type === 'total_stars') {
         current = userTotalStars.value;
     }
-    // weekly_commits 暂无实时数据，默认为0
 
     let percent = (current / target) * 100;
     return Math.min(100, Math.max(0, percent));
@@ -522,26 +510,23 @@ onMounted(async () => {
                   </div>
                 </v-card-text>
 
-                <v-card-actions class="pa-4 pt-0">
+                <v-card-actions class="pa-4 pt-0 d-flex align-center">
                   <v-btn
-                    block
+                    class="flex-grow-1 rounded-lg"
                     :variant="wish.is_unlocked ? 'flat' : 'outlined'"
                     :color="wish.is_unlocked ? 'primary' : 'grey'"
                     :href="wish.original_url"
                     target="_blank"
                     prepend-icon="mdi-cart-outline"
-                    class="rounded-lg"
                   >
                     {{ wish.is_unlocked ? '立即购买' : '查看详情' }}
                   </v-btn>
                   
                   <v-btn
-                    density="comfortable"
                     icon="mdi-trash-can-outline"
-                    variant="text"
-                    color="grey"
-                    class="position-absolute bottom-0 right-0 ma-4"
-                    style="z-index: 2;"
+                    variant="tonal"
+                    color="orange"
+                    class="ml-2 rounded-lg"
                     @click.stop="openDeleteConfirm(wish.wish_id)" 
                   ></v-btn>
                 </v-card-actions>
