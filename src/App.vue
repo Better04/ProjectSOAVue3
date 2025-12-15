@@ -13,12 +13,17 @@ const shouldShowHeader = () => {
 </script>
 
 <template>
-  <AppHeader v-if="shouldShowHeader()"/>
-  <main>
-    <RouterView />
-  </main>
+  <v-app>
+    
+    <AppHeader v-if="shouldShowHeader()"/>
+    
+    <v-main>
+      <RouterView />
+    </v-main>
 
-  <AIChat></AIChat>
+    <AIChat></AIChat>
+    
+  </v-app>
 </template>
 
 <style>
