@@ -31,7 +31,18 @@ const userInitial = computed(() => {
     <div class="d-flex align-center gap-container">
       
       <template v-if="authStore.isLoggedIn">
-        
+      
+        <v-btn
+          to="/battle"
+          variant="text"
+          class="nav-btn text-body-2 font-weight-bold mr-1"
+          color="white"
+          prepend-icon="mdi-sword-cross"
+          rounded="lg"
+        >
+          代码竞技场
+        </v-btn>
+
         <v-btn
           to="/devinfo"
           variant="text"

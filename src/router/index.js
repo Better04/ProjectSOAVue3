@@ -5,6 +5,8 @@ import RegisterView from '../views/RegisterView.vue' // 导入
 
 import ReportView from '../views/ReportView.vue' // 引入新视图
 
+// 1. 引入新页面
+import BattleView from '../views/BattleView.vue'
 
 // 假设你创建了一个 WishlistView.vue 文件
 import WishlistView from '../views/WishlistView.vue' 
@@ -47,6 +49,11 @@ const router = createRouter({
       path: '/report/:username',
       name: 'report',
       component: ReportView
+    },
+    {
+      path: '/battle',
+      name: 'battle',
+      component: BattleView
     }
 
   ]

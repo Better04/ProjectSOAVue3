@@ -331,6 +331,15 @@ const initRepoCharts = () => {
 
     window.addEventListener('resize', () => chartsInstance.forEach(c => c.resize()));
 };
+
+const isRepoActive = (dateString) => {
+  if (!dateString) return false;
+  const updateDate = new Date(dateString);
+  const currentDate = new Date();
+  const diffTime = Math.abs(currentDate - updateDate);
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+  return diffDays <= 180; 
+};
 </script>
 
 <template>
@@ -552,10 +561,34 @@ const initRepoCharts = () => {
                                         <v-card class="rounded-xl h-100 repo-card bg-white" elevation="1" border>
                                             <v-card-item>
                                                 <div class="d-flex justify-space-between align-start mb-2">
-                                                    <div class="text-h6 font-weight-bold text-grey-darken-3 text-truncate pr-2">
-                                                        {{ repo.name }}
+                                                    <div class="d-flex align-center text-h6 font-weight-bold text-grey-darken-3 text-truncate pr-2" style="max-width: 85%;">
+                                                        <span class="text-truncate mr-2">{{ repo.name }}</span>
+                                                        
+                                                        <v-chip
+                                                            v-if="isRepoActive(repo.updated_at)"
+                                                            color="success"
+                                                            variant="flat"
+                                                            size="x-small"
+                                                            label
+                                                            class="font-weight-bold px-1"
+                                                            style="height: 20px;"
+                                                        >
+                                                            Active
+                                                        </v-chip>
+                                                        <v-chip
+                                                            v-else
+                                                            color="grey-lighten-1"
+                                                            variant="outlined"
+                                                            size="x-small"
+                                                            label
+                                                            class="px-1"
+                                                            style="height: 20px; font-size: 10px;"
+                                                        >
+                                                            Archived
+                                                        </v-chip>
                                                     </div>
-                                                    <v-chip size="x-small" color="amber-darken-2" variant="tonal" prepend-icon="mdi-star" class="font-weight-bold">
+
+                                                    <v-chip size="x-small" color="amber-darken-2" variant="tonal" prepend-icon="mdi-star" class="font-weight-bold shrink-0">
                                                         {{ repo.stars }}
                                                     </v-chip>
                                                 </div>
