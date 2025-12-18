@@ -373,7 +373,7 @@ const getRepoUrl = (repoName) => {
             <v-col cols="12" md="7" lg="8">
               <v-card class="h-100 rounded-xl" elevation="2">
                 <v-card-title class="text-h6 font-weight-bold pa-4 text-blue-grey-darken-3 gradient-text-header">
-                  <v-icon icon="mdi-robot" class="mr-2"></v-icon>
+                  <v-icon icon="mdi-robot" color="primary" class="mr-2"></v-icon>
                   AI 深度评语
                 </v-card-title>
                 <v-divider></v-divider>
