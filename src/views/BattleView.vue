@@ -1,103 +1,158 @@
 <script setup>
-import { ref, onMounted, nextTick } from 'vue'
-import axios from 'axios'
-import * as echarts from 'echarts'
+import { ref, onMounted, nextTick } from "vue";
+import axios from "axios";
+import * as echarts from "echarts";
 
 // --- 状态数据 ---
-const player1 = ref('')
-const player2 = ref('')
-const loading = ref(false)
-const battleResult = ref(null)
-const errorMsg = ref('')
-const showBattleFlash = ref(false)
-const analysisStage = ref('') // 'fetching', 'analyzing', 'complete'
-const analysisProgress = ref(0)
+const player1 = ref("");
+const player2 = ref("");
+const loading = ref(false);
+const battleResult = ref(null);
+const errorMsg = ref("");
+const showBattleFlash = ref(false);
+const analysisStage = ref(""); // 'fetching', 'analyzing', 'complete'
+const analysisProgress = ref(0);
+
+// --- 投掷动画相关数据 ---
+const flyingItems = ref([]);
+let animationTimer = null;
+const attributes = [
+  { label: "仓库", icon: "📦" },
+  { label: "粉丝", icon: "👥" },
+  { label: "获赞", icon: "⭐" },
+  { label: "活跃", icon: "🔥" },
+  { label: "心愿", icon: "🌠" },
+  { label: "积分", icon: "💎" },
+];
 
 // 图表实例
-let chartInstance = null
-const chartRef = ref(null)
+let chartInstance = null;
+const chartRef = ref(null);
 
 // AI 分析阶段文本
 const stageTexts = {
-  fetching: '正在获取选手数据...',
-  analyzing: 'AI 正在深度分析战局...',
-  complete: '分析完成！'
-}
+  fetching: "正在获取选手数据...",
+  analyzing: "AI 正在深度分析战局...",
+  complete: "分析完成！",
+};
+
+const redIsHit = ref(false);
+const blueIsHit = ref(false);
+// --- 动画逻辑：投掷属性 ---
+const throwAttribute = (side) => {
+  const attr = attributes[Math.floor(Math.random() * attributes.length)];
+  const id = Date.now() + Math.random();
+  
+  // 随机抛物线高度
+  const offset = Math.floor(Math.random() * 60) - 30; 
+
+  flyingItems.value.push({
+    id,
+    side, // 'red' (左) 或 'blue' (右)
+    offset,
+    ...attr,
+  });
+
+  // 命中逻辑：1秒左右接触
+  setTimeout(() => {
+    if (side === "red") {
+      blueIsHit.value = true;
+      setTimeout(() => (blueIsHit.value = false), 150);
+    } else {
+      redIsHit.value = true;
+      setTimeout(() => (redIsHit.value = false), 150);
+    }
+  }, 1000);
+
+  // 移除元素
+  setTimeout(() => {
+    flyingItems.value = flyingItems.value.filter((item) => item.id !== id);
+  }, 1200);
+};
 
 // --- 核心方法：发起对战 ---
 const startBattle = async () => {
   if (!player1.value || !player2.value) {
-    alert('请先输入两名选手的 GitHub ID！')
-    return
+    alert("请先输入两名选手的 GitHub ID！");
+    return;
   }
 
-  loading.value = true
-  errorMsg.value = ''
-  battleResult.value = null
-  showBattleFlash.value = true
-  analysisStage.value = 'fetching'
-  analysisProgress.value = 0
+  loading.value = true;
+  errorMsg.value = "";
+  battleResult.value = null;
+  showBattleFlash.value = true;
+  analysisStage.value = "fetching";
+  analysisProgress.value = 0;
+
+  // --- 新增：自动投掷武器动画定时器 ---
+  const weaponTimer = setInterval(() => {
+    // 随机让左边或右边扔
+    throwAttribute(Math.random() > 0.5 ? "red" : "blue");
+  }, 600); // 每600ms扔一个属性
 
   // 战斗闪光效果
   setTimeout(() => {
-    showBattleFlash.value = false
-  }, 500)
+    showBattleFlash.value = false;
+  }, 500);
 
   // 模拟进度条
   const progressInterval = setInterval(() => {
     if (analysisProgress.value < 90) {
-      analysisProgress.value += Math.random() * 15
+      analysisProgress.value += Math.random() * 15;
     }
-  }, 300)
+  }, 300);
 
   try {
     // 第一阶段：获取数据
-    await new Promise(resolve => setTimeout(resolve, 800))
-    analysisStage.value = 'analyzing'
-    analysisProgress.value = 40
+    await new Promise((resolve) => setTimeout(resolve, 800));
+    analysisStage.value = "analyzing";
+    analysisProgress.value = 40;
 
-    const res = await axios.post('http://127.0.0.1:5000/api/battle/analyze', {
+    const res = await axios.post("http://127.0.0.1:5000/api/battle/analyze", {
       player1: player1.value,
-      player2: player2.value
-    })
+      player2: player2.value,
+    });
 
     if (res.data.success) {
-      analysisProgress.value = 100
-      analysisStage.value = 'complete'
-      
+      analysisProgress.value = 100;
+      analysisStage.value = "complete";
+
       // 完成后短暂延迟，让用户看到完成状态
-      await new Promise(resolve => setTimeout(resolve, 500))
-      
-      battleResult.value = res.data
-      await nextTick()
-      renderChart(res.data.players)
+      await new Promise((resolve) => setTimeout(resolve, 500));
+
+      battleResult.value = res.data;
+      await nextTick();
+      renderChart(res.data.players);
     }
   } catch (err) {
-    console.error(err)
-    errorMsg.value = err.response?.data?.message || '对战请求失败，请检查后端服务！'
+    console.error(err);
+    errorMsg.value =
+      err.response?.data?.message || "对战请求失败，请检查后端服务！";
   } finally {
-    clearInterval(progressInterval)
-    loading.value = false
-    analysisStage.value = ''
-    analysisProgress.value = 0
+    // --- 重要：清理定时器 ---
+    clearInterval(progressInterval);
+    clearInterval(weaponTimer); // 清理投掷定时器
+    loading.value = false;
+    analysisStage.value = "";
+    analysisProgress.value = 0;
   }
-}
+};
 
 // --- 图表渲染逻辑 ---
 const renderChart = (players) => {
-  if (!chartRef.value) return
-  
+  if (!chartRef.value) return;
+
   if (chartInstance) {
-    chartInstance.dispose()
+    chartInstance.dispose();
   }
-  
-  chartInstance = echarts.init(chartRef.value)
-  
-  const p1 = players.player1
-  const p2 = players.player2
-  
-  const p1Name = `${p1.username} (红方)`
-  const p2Name = `${p2.username} (蓝方)`
+
+  chartInstance = echarts.init(chartRef.value);
+
+  const p1 = players.player1;
+  const p2 = players.player2;
+
+  const p1Name = `${p1.username} (红方)`;
+  const p2Name = `${p2.username} (蓝方)`;
 
   const getData = (p) => [
     p.github_data.repos,
@@ -105,112 +160,230 @@ const renderChart = (players) => {
     p.github_data.stars,
     p.github_data.commits_weekly,
     p.internal_data.wishes_count,
-    p.internal_data.score
-  ]
+    p.internal_data.score,
+  ];
 
   const option = {
-    title: { 
-      text: '战力雷达对比', 
-      left: 'center',
+    title: {
+      text: "战力雷达对比",
+      left: "center",
       textStyle: {
-        color: '#333',
+        color: "#333",
         fontSize: 18,
-        fontWeight: 'bold'
-      }
+        fontWeight: "bold",
+      },
     },
     tooltip: {},
     legend: {
       data: [p1Name, p2Name],
-      bottom: 0
+      bottom: 0,
     },
     radar: {
       indicator: [
-        { name: '仓库 (Repos)', max: Math.max(p1.github_data.repos, p2.github_data.repos) + 10 },
-        { name: '粉丝 (Followers)', max: Math.max(p1.github_data.followers, p2.github_data.followers) + 10 },
-        { name: '获赞 (Stars)', max: Math.max(p1.github_data.stars, p2.github_data.stars) + 10 },
-        { name: '活跃 (Commits)', max: Math.max(p1.github_data.commits_weekly, p2.github_data.commits_weekly) + 5 },
-        { name: '心愿 (Wishes)', max: Math.max(p1.internal_data.wishes_count, p2.internal_data.wishes_count) + 5 },
-        { name: '积分 (Score)', max: Math.max(p1.internal_data.score, p2.internal_data.score) + 50 }
-      ]
-    },
-    series: [{
-      name: 'Ability',
-      type: 'radar',
-      animationDuration: 2000,
-      animationEasing: 'elasticOut',
-      data: [
         {
-          value: getData(p1),
-          name: p1Name,
-          areaStyle: { opacity: 0.3, color: '#ff4d4f' },
-          itemStyle: { color: '#ff4d4f' }
+          name: "仓库 (Repos)",
+          max: Math.max(p1.github_data.repos, p2.github_data.repos) + 10,
         },
         {
-          value: getData(p2),
-          name: p2Name,
-          areaStyle: { opacity: 0.3, color: '#1890ff' },
-          itemStyle: { color: '#1890ff' }
-        }
-      ]
-    }]
-  }
+          name: "粉丝 (Followers)",
+          max:
+            Math.max(p1.github_data.followers, p2.github_data.followers) + 10,
+        },
+        {
+          name: "获赞 (Stars)",
+          max: Math.max(p1.github_data.stars, p2.github_data.stars) + 10,
+        },
+        {
+          name: "活跃 (Commits)",
+          max:
+            Math.max(
+              p1.github_data.commits_weekly,
+              p2.github_data.commits_weekly
+            ) + 5,
+        },
+        {
+          name: "心愿 (Wishes)",
+          max:
+            Math.max(
+              p1.internal_data.wishes_count,
+              p2.internal_data.wishes_count
+            ) + 5,
+        },
+        {
+          name: "积分 (Score)",
+          max: Math.max(p1.internal_data.score, p2.internal_data.score) + 50,
+        },
+      ],
+    },
+    series: [
+      {
+        name: "Ability",
+        type: "radar",
+        animationDuration: 2000,
+        animationEasing: "elasticOut",
+        data: [
+          {
+            value: getData(p1),
+            name: p1Name,
+            areaStyle: { opacity: 0.3, color: "#ff4d4f" },
+            itemStyle: { color: "#ff4d4f" },
+          },
+          {
+            value: getData(p2),
+            name: p2Name,
+            areaStyle: { opacity: 0.3, color: "#1890ff" },
+            itemStyle: { color: "#1890ff" },
+          },
+        ],
+      },
+    ],
+  };
 
-  chartInstance.setOption(option)
-}
+  chartInstance.setOption(option);
+};
 
-window.addEventListener('resize', () => chartInstance && chartInstance.resize())
+window.addEventListener(
+  "resize",
+  () => chartInstance && chartInstance.resize()
+);
 </script>
 
 <template>
   <div class="battle-container">
     <!-- 背景粒子效果 -->
     <div class="particles">
-      <div class="particle" v-for="i in 20" :key="i" :style="{
+      <div
+        class="particle"
+        v-for="i in 20"
+        :key="i"
+        :style="{
         left: Math.random() * 100 + '%',
         animationDelay: Math.random() * 5 + 's',
         animationDuration: (3 + Math.random() * 4) + 's'
-      }"></div>
+      }"
+      ></div>
     </div>
 
     <!-- 战斗闪光效果 -->
-    <div class="battle-flash" :class="{ active: showBattleFlash }"></div>
+    <div
+      class="battle-flash"
+      :class="{ active: showBattleFlash }"
+    ></div>
 
     <!-- AI 分析全屏遮罩 -->
-    <div v-if="loading" class="analysis-overlay">
-      <div class="analysis-content">
-        <div class="ai-brain">
-          <div class="brain-wave" v-for="i in 3" :key="i"></div>
-          <div class="brain-core">
-            <span class="ai-icon">🤖</span>
-          </div>
+    <div
+      v-if="loading"
+      class="analysis-overlay pixel-battle-theme"
+    >
+      <div class="pixel-stage">
+
+        <div class="battle-ground">
+  <div class="pixel-unit opponent-side" :class="{ 'is-hit': blueIsHit }">
+    <div class="pixel-status-bar opponent-bar">
+      <div class="p-header">
+        <span class="p-name">{{ player2 || 'UNKNOWN' }}</span>
+        <span class="p-lv">Lv.99</span>
+      </div>
+      <div class="p-hp-container">
+        <span class="p-hp-label">HP</span>
+        <div class="p-hp-track">
+          <div class="p-hp-fill" :style="{ width: (100 - analysisProgress) + '%' }"></div>
         </div>
-        
+      </div>
+    </div>
+    <div class="pixel-sprite-wrap">
+      <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-v/black-white/animated/1.gif" class="pixel-avatar" />
+      <div class="pixel-base"></div>
+    </div>
+  </div>
+
+  <div class="trajectory-layer">
+    <div 
+      v-for="item in flyingItems" 
+      :key="item.id"
+      :class="['flying-weapon', item.side === 'red' ? 'throw-right' : 'throw-left']"
+      :style="{ top: (50 + item.offset) + '%' }"
+    >
+      <div class="weapon-content">
+        <span class="w-icon">{{ item.icon }}</span>
+        <span class="w-label">{{ item.label }}</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="pixel-unit player-side" :class="{ 'is-hit': redIsHit }">
+    <div class="pixel-sprite-wrap">
+      <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-v/black-white/animated/back/4.gif" class="pixel-avatar player-back" />
+      <div class="pixel-base"></div>
+    </div>
+    <div class="pixel-status-bar player-bar">
+      <div class="p-header">
+        <span class="p-name">{{ player1 || 'YOU' }}</span>
+        <span class="p-lv">Lv.99</span>
+      </div>
+      <div class="p-hp-container">
+        <span class="p-hp-label">HP</span>
+        <div class="p-hp-track">
+          <div class="p-hp-fill" :style="{ width: (analysisProgress) + '%' }"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+        <div class="pixel-message-box">
+          <div class="message-content">
+            <span class="pixel-cursor"></span>
+            {{ stageTexts[analysisStage] }}...
+          </div>
+          <div class="message-percent">{{ Math.round(analysisProgress) }}%</div>
+        </div>
+
         <h2 class="analysis-title">{{ stageTexts[analysisStage] }}</h2>
-        
+
         <div class="progress-container">
           <div class="progress-bar">
-            <div class="progress-fill" :style="{ width: analysisProgress + '%' }"></div>
-            <div class="progress-glow" :style="{ left: analysisProgress + '%' }"></div>
+            <div
+              class="progress-fill"
+              :style="{ width: analysisProgress + '%' }"
+            ></div>
+            <div
+              class="progress-glow"
+              :style="{ left: analysisProgress + '%' }"
+            ></div>
           </div>
           <div class="progress-text">{{ Math.round(analysisProgress) }}%</div>
         </div>
 
         <!-- 数据流动效果 -->
         <div class="data-streams">
-          <div class="data-line" v-for="i in 5" :key="i"></div>
+          <div
+            class="data-line"
+            v-for="i in 5"
+            :key="i"
+          ></div>
         </div>
 
         <!-- 分析状态指示器 -->
         <div class="status-indicators">
-          <div class="indicator" :class="{ active: analysisStage === 'fetching' }">
+          <div
+            class="indicator"
+            :class="{ active: analysisStage === 'fetching' }"
+          >
             <span class="dot"></span>
             <span class="label">数据采集</span>
           </div>
-          <div class="indicator" :class="{ active: analysisStage === 'analyzing' }">
+          <div
+            class="indicator"
+            :class="{ active: analysisStage === 'analyzing' }"
+          >
             <span class="dot"></span>
             <span class="label">AI分析</span>
           </div>
-          <div class="indicator" :class="{ active: analysisStage === 'complete' }">
+          <div
+            class="indicator"
+            :class="{ active: analysisStage === 'complete' }"
+          >
             <span class="dot"></span>
             <span class="label">生成报告</span>
           </div>
@@ -221,48 +394,80 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
     <h1 class="main-title">
       <span class="title-glow">⚔️ 代码竞技场 ⚔️</span>
     </h1>
-    
+
     <div class="input-zone">
       <div class="player-input red-side">
         <div class="input-glow red"></div>
         <h3>🔴 红方选手</h3>
-        <input v-model="player1" placeholder="输入 GitHub ID" class="pokemon-input" />
+        <input
+          v-model="player1"
+          placeholder="输入 GitHub ID"
+          class="pokemon-input"
+        />
       </div>
-      
+
       <div class="vs-container">
         <div class="vs-text">VS</div>
         <div class="vs-lightning"></div>
       </div>
-      
+
       <div class="player-input blue-side">
         <div class="input-glow blue"></div>
         <h3>🔵 蓝方选手</h3>
-        <input v-model="player2" placeholder="输入 GitHub ID" class="pokemon-input" />
+        <input
+          v-model="player2"
+          placeholder="输入 GitHub ID"
+          class="pokemon-input"
+        />
       </div>
     </div>
 
     <div class="action-zone">
-      <button @click="startBattle" :disabled="loading" class="battle-btn">
+      <button
+        @click="startBattle"
+        :disabled="loading"
+        class="battle-btn"
+      >
         <span class="btn-text">{{ loading ? 'AI 正在分析战局...' : '开始对决 (FIGHT!)' }}</span>
         <div class="btn-shine"></div>
       </button>
     </div>
 
-    <div v-if="errorMsg" class="error-msg shake">{{ errorMsg }}</div>
+    <div
+      v-if="errorMsg"
+      class="error-msg shake"
+    >{{ errorMsg }}</div>
 
-    <div v-if="battleResult" class="result-zone">
-      
+    <div
+      v-if="battleResult"
+      class="result-zone"
+    >
+
       <div class="players-info">
         <div class="p-card red slide-in-left">
           <div class="card-energy red"></div>
-          <img :src="battleResult.players.player1.avatar" alt="p1" class="avatar-bounce" />
+          <img
+            :src="battleResult.players.player1.avatar"
+            alt="p1"
+            class="avatar-bounce"
+          />
           <h3>{{ battleResult.players.player1.username }}</h3>
           <p class="rank-badge">{{ battleResult.players.player1.rank_emoji }} {{ battleResult.players.player1.rank }}</p>
           <p class="power-score">战力: {{ battleResult.players.player1.power_score }}</p>
-          <p class="tag" v-if="battleResult.players.player1.internal_data.is_member">🏅 平台会员</p>
-          <p class="tag ghost" v-else>👻 野生路人</p>
+          <p
+            class="tag"
+            v-if="battleResult.players.player1.internal_data.is_member"
+          >🏅 平台会员</p>
+          <p
+            class="tag ghost"
+            v-else
+          >👻 野生路人</p>
           <div class="strengths">
-            <span class="strength-tag" v-for="s in battleResult.players.player1.strengths" :key="s">{{ s }}</span>
+            <span
+              class="strength-tag"
+              v-for="s in battleResult.players.player1.strengths"
+              :key="s"
+            >{{ s }}</span>
           </div>
           <div class="power-lines">
             <div class="power-line"></div>
@@ -271,18 +476,35 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
           </div>
         </div>
 
-        <div class="chart-container radar-expand" ref="chartRef"></div>
+        <div
+          class="chart-container radar-expand"
+          ref="chartRef"
+        ></div>
 
         <div class="p-card blue slide-in-right">
           <div class="card-energy blue"></div>
-          <img :src="battleResult.players.player2.avatar" alt="p2" class="avatar-bounce" />
+          <img
+            :src="battleResult.players.player2.avatar"
+            alt="p2"
+            class="avatar-bounce"
+          />
           <h3>{{ battleResult.players.player2.username }}</h3>
           <p class="rank-badge">{{ battleResult.players.player2.rank_emoji }} {{ battleResult.players.player2.rank }}</p>
           <p class="power-score">战力: {{ battleResult.players.player2.power_score }}</p>
-          <p class="tag" v-if="battleResult.players.player2.internal_data.is_member">🏅 平台会员</p>
-          <p class="tag ghost" v-else>👻 野生路人</p>
+          <p
+            class="tag"
+            v-if="battleResult.players.player2.internal_data.is_member"
+          >🏅 平台会员</p>
+          <p
+            class="tag ghost"
+            v-else
+          >👻 野生路人</p>
           <div class="strengths">
-            <span class="strength-tag" v-for="s in battleResult.players.player2.strengths" :key="s">{{ s }}</span>
+            <span
+              class="strength-tag"
+              v-for="s in battleResult.players.player2.strengths"
+              :key="s"
+            >{{ s }}</span>
           </div>
           <div class="power-lines">
             <div class="power-line"></div>
@@ -303,12 +525,14 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
 </template>
 
 <style scoped>
+@import url("https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap");
+
 .battle-container {
   max-width: 1000px;
   margin: 0 auto;
   padding: 20px;
   text-align: center;
-  font-family: 'Arial', sans-serif;
+  font-family: "Arial", sans-serif;
   position: relative;
   overflow: hidden;
 }
@@ -320,7 +544,11 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
   left: 0;
   width: 100%;
   height: 100%;
-  background: linear-gradient(135deg, rgba(30,30,60,0.98), rgba(60,30,90,0.98));
+  background: linear-gradient(
+    135deg,
+    rgba(30, 30, 60, 0.98),
+    rgba(60, 30, 90, 0.98)
+  );
   backdrop-filter: blur(10px);
   z-index: 10000;
   display: flex;
@@ -330,8 +558,12 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
 }
 
 @keyframes overlayFadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .analysis-content {
@@ -361,13 +593,18 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
   display: flex;
   justify-content: center;
   align-items: center;
-  box-shadow: 0 0 40px rgba(102,126,234,0.8);
+  box-shadow: 0 0 40px rgba(102, 126, 234, 0.8);
   animation: brainPulse 2s ease-in-out infinite;
 }
 
 @keyframes brainPulse {
-  0%, 100% { transform: translate(-50%, -50%) scale(1); }
-  50% { transform: translate(-50%, -50%) scale(1.1); }
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.1);
+  }
 }
 
 .ai-icon {
@@ -376,8 +613,12 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
 }
 
 @keyframes iconSpin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .brain-wave {
@@ -386,7 +627,7 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
   left: 50%;
   width: 100%;
   height: 100%;
-  border: 2px solid rgba(102,126,234,0.5);
+  border: 2px solid rgba(102, 126, 234, 0.5);
   border-radius: 50%;
   transform: translate(-50%, -50%);
   animation: waveExpand 3s ease-out infinite;
@@ -417,13 +658,18 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
   font-size: 24px;
   font-weight: bold;
   margin-bottom: 30px;
-  text-shadow: 0 0 20px rgba(255,255,255,0.5);
+  text-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
   animation: titleGlow 2s ease-in-out infinite;
 }
 
 @keyframes titleGlow {
-  0%, 100% { text-shadow: 0 0 20px rgba(255,255,255,0.5); }
-  50% { text-shadow: 0 0 30px rgba(102,126,234,0.8); }
+  0%,
+  100% {
+    text-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+  }
+  50% {
+    text-shadow: 0 0 30px rgba(102, 126, 234, 0.8);
+  }
 }
 
 /* 进度条 */
@@ -434,7 +680,7 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
 .progress-bar {
   width: 100%;
   height: 8px;
-  background: rgba(255,255,255,0.1);
+  background: rgba(255, 255, 255, 0.1);
   border-radius: 10px;
   overflow: hidden;
   position: relative;
@@ -446,7 +692,7 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
   background: linear-gradient(90deg, #667eea, #764ba2, #f093fb);
   border-radius: 10px;
   transition: width 0.3s ease;
-  box-shadow: 0 0 20px rgba(102,126,234,0.8);
+  box-shadow: 0 0 20px rgba(102, 126, 234, 0.8);
 }
 
 .progress-glow {
@@ -454,7 +700,7 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
   top: 0;
   width: 20px;
   height: 100%;
-  background: rgba(255,255,255,0.8);
+  background: rgba(255, 255, 255, 0.8);
   filter: blur(10px);
   transform: translateX(-50%);
   transition: left 0.3s ease;
@@ -557,13 +803,20 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
 }
 
 @keyframes dotPulse {
-  0%, 100% { transform: scale(1); box-shadow: 0 0 10px #667eea; }
-  50% { transform: scale(1.5); box-shadow: 0 0 20px #667eea; }
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 10px #667eea;
+  }
+  50% {
+    transform: scale(1.5);
+    box-shadow: 0 0 20px #667eea;
+  }
 }
 
 .indicator .label {
   font-size: 14px;
-  color: rgba(255,255,255,0.8);
+  color: rgba(255, 255, 255, 0.8);
 }
 
 /* ============ 原有样式 ============ */
@@ -581,7 +834,7 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
   position: absolute;
   width: 4px;
   height: 4px;
-  background: radial-gradient(circle, rgba(255,255,255,0.8), transparent);
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.8), transparent);
   border-radius: 50%;
   animation: float-up linear infinite;
 }
@@ -609,7 +862,11 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
   left: 0;
   width: 100%;
   height: 100%;
-  background: radial-gradient(circle, rgba(255,255,255,0.9), transparent 70%);
+  background: radial-gradient(
+    circle,
+    rgba(255, 255, 255, 0.9),
+    transparent 70%
+  );
   opacity: 0;
   pointer-events: none;
   z-index: 9999;
@@ -622,8 +879,13 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
 }
 
 @keyframes flash {
-  0%, 100% { opacity: 0; }
-  50% { opacity: 1; }
+  0%,
+  100% {
+    opacity: 0;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 .main-title {
@@ -641,12 +903,17 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   animation: gradient-shift 3s ease infinite;
-  text-shadow: 0 0 30px rgba(255,77,79,0.5);
+  text-shadow: 0 0 30px rgba(255, 77, 79, 0.5);
 }
 
 @keyframes gradient-shift {
-  0%, 100% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
 }
 
 .input-zone {
@@ -673,8 +940,13 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
 }
 
 @keyframes float {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-10px); }
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
 }
 
 .input-glow {
@@ -700,8 +972,15 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
 }
 
 @keyframes pulse {
-  0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.3; }
-  50% { transform: translate(-50%, -50%) scale(1.2); opacity: 0.5; }
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.3;
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.2);
+    opacity: 0.5;
+  }
 }
 
 .pokemon-input {
@@ -711,24 +990,24 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
   width: 200px;
   text-align: center;
   transition: all 0.3s;
-  background: rgba(255,255,255,0.9);
+  background: rgba(255, 255, 255, 0.9);
 }
 
 .pokemon-input:focus {
   outline: none;
   border-color: #722ed1;
-  box-shadow: 0 0 20px rgba(114,46,209,0.5);
+  box-shadow: 0 0 20px rgba(114, 46, 209, 0.5);
   transform: scale(1.05);
 }
 
-.red-side h3 { 
+.red-side h3 {
   color: #ff4d4f;
-  text-shadow: 0 0 10px rgba(255,77,79,0.5);
+  text-shadow: 0 0 10px rgba(255, 77, 79, 0.5);
 }
 
-.blue-side h3 { 
+.blue-side h3 {
   color: #1890ff;
-  text-shadow: 0 0 10px rgba(24,144,255,0.5);
+  text-shadow: 0 0 10px rgba(24, 144, 255, 0.5);
 }
 
 .vs-container {
@@ -743,14 +1022,16 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
   position: relative;
   z-index: 2;
   animation: vs-shake 0.5s ease-in-out infinite alternate;
-  text-shadow: 
-    2px 2px 0 #ff4d4f,
-    -2px -2px 0 #1890ff;
+  text-shadow: 2px 2px 0 #ff4d4f, -2px -2px 0 #1890ff;
 }
 
 @keyframes vs-shake {
-  0% { transform: rotate(-2deg) scale(1); }
-  100% { transform: rotate(2deg) scale(1.05); }
+  0% {
+    transform: rotate(-2deg) scale(1);
+  }
+  100% {
+    transform: rotate(2deg) scale(1.05);
+  }
 }
 
 .vs-lightning {
@@ -760,17 +1041,37 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
   width: 100px;
   height: 100px;
   transform: translate(-50%, -50%);
-  background: 
-    linear-gradient(45deg, transparent 40%, #ffd700 40%, #ffd700 60%, transparent 60%),
-    linear-gradient(-45deg, transparent 40%, #ffd700 40%, #ffd700 60%, transparent 60%);
+  background: linear-gradient(
+      45deg,
+      transparent 40%,
+      #ffd700 40%,
+      #ffd700 60%,
+      transparent 60%
+    ),
+    linear-gradient(
+      -45deg,
+      transparent 40%,
+      #ffd700 40%,
+      #ffd700 60%,
+      transparent 60%
+    );
   opacity: 0;
   animation: lightning-flash 3s ease-in-out infinite;
 }
 
 @keyframes lightning-flash {
-  0%, 90%, 100% { opacity: 0; }
-  92%, 96% { opacity: 0.8; }
-  94% { opacity: 0; }
+  0%,
+  90%,
+  100% {
+    opacity: 0;
+  }
+  92%,
+  96% {
+    opacity: 0.8;
+  }
+  94% {
+    opacity: 0;
+  }
 }
 
 .battle-btn {
@@ -782,7 +1083,7 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
   border-radius: 50px;
   cursor: pointer;
   transition: all 0.3s;
-  box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
   position: relative;
   overflow: hidden;
   z-index: 1;
@@ -802,7 +1103,7 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
   background: linear-gradient(
     45deg,
     transparent 30%,
-    rgba(255,255,255,0.3) 50%,
+    rgba(255, 255, 255, 0.3) 50%,
     transparent 70%
   );
   transform: rotate(45deg);
@@ -810,26 +1111,30 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
 }
 
 @keyframes shine {
-  0% { transform: translateX(-100%) translateY(-100%) rotate(45deg); }
-  100% { transform: translateX(100%) translateY(100%) rotate(45deg); }
+  0% {
+    transform: translateX(-100%) translateY(-100%) rotate(45deg);
+  }
+  100% {
+    transform: translateX(100%) translateY(100%) rotate(45deg);
+  }
 }
 
-.battle-btn:hover { 
+.battle-btn:hover {
   transform: scale(1.05);
-  box-shadow: 0 6px 25px rgba(0,0,0,0.3);
+  box-shadow: 0 6px 25px rgba(0, 0, 0, 0.3);
 }
 
 .battle-btn:active {
   transform: scale(0.98);
 }
 
-.battle-btn:disabled { 
-  background: #ccc; 
+.battle-btn:disabled {
+  background: #ccc;
   cursor: not-allowed;
   transform: scale(1);
 }
 
-.result-zone { 
+.result-zone {
   margin-top: 40px;
   position: relative;
   z-index: 1;
@@ -884,9 +1189,16 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
 }
 
 @keyframes shake {
-  0%, 100% { transform: scale(1.05) rotate(0deg); }
-  25% { transform: scale(1.05) rotate(-2deg); }
-  75% { transform: scale(1.05) rotate(2deg); }
+  0%,
+  100% {
+    transform: scale(1.05) rotate(0deg);
+  }
+  25% {
+    transform: scale(1.05) rotate(-2deg);
+  }
+  75% {
+    transform: scale(1.05) rotate(2deg);
+  }
 }
 
 .card-energy {
@@ -907,16 +1219,21 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
 }
 
 .card-energy.red {
-  box-shadow: 0 0 30px rgba(255,77,79,0.6);
+  box-shadow: 0 0 30px rgba(255, 77, 79, 0.6);
 }
 
 .card-energy.blue {
-  box-shadow: 0 0 30px rgba(24,144,255,0.6);
+  box-shadow: 0 0 30px rgba(24, 144, 255, 0.6);
 }
 
 @keyframes energy-pulse {
-  0%, 100% { box-shadow: 0 0 20px rgba(255,77,79,0.4); }
-  50% { box-shadow: 0 0 40px rgba(255,77,79,0.8); }
+  0%,
+  100% {
+    box-shadow: 0 0 20px rgba(255, 77, 79, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(255, 77, 79, 0.8);
+  }
 }
 
 .avatar-bounce {
@@ -924,8 +1241,13 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
 }
 
 @keyframes bounce {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-10px); }
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
 }
 
 .p-card img {
@@ -941,8 +1263,12 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
   box-shadow: 0 0 30px currentColor;
 }
 
-.p-card.red img { border-color: #ff4d4f; }
-.p-card.blue img { border-color: #1890ff; }
+.p-card.red img {
+  border-color: #ff4d4f;
+}
+.p-card.blue img {
+  border-color: #1890ff;
+}
 
 .rank-badge {
   font-size: 14px;
@@ -985,8 +1311,13 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
 }
 
 @keyframes tagFloat {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-3px); }
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-3px);
+  }
 }
 
 .power-lines {
@@ -1012,8 +1343,15 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
 }
 
 @keyframes power-flow {
-  0%, 100% { opacity: 0.3; transform: scaleX(0.8); }
-  50% { opacity: 1; transform: scaleX(1); }
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: scaleX(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scaleX(1);
+  }
 }
 
 .chart-container {
@@ -1048,19 +1386,24 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
 }
 
 @keyframes tag-glow {
-  0%, 100% { box-shadow: 0 0 5px rgba(255,215,0,0.5); }
-  50% { box-shadow: 0 0 15px rgba(255,215,0,0.8); }
+  0%,
+  100% {
+    box-shadow: 0 0 5px rgba(255, 215, 0, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 15px rgba(255, 215, 0, 0.8);
+  }
 }
 
-.tag.ghost { 
-  background: #eee; 
+.tag.ghost {
+  background: #eee;
   color: #666;
   animation: none;
 }
 
 .ai-commentary {
   margin-top: 30px;
-  background: rgba(249,249,249,0.95);
+  background: rgba(249, 249, 249, 0.95);
   padding: 20px;
   border-left: 5px solid #722ed1;
   text-align: left;
@@ -1096,7 +1439,9 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
 }
 
 @keyframes border-flow {
-  to { background-position: 200% 0; }
+  to {
+    background-position: 200% 0;
+  }
 }
 
 .ai-commentary p {
@@ -1107,8 +1452,8 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
   z-index: 1;
 }
 
-.error-msg { 
-  color: red; 
+.error-msg {
+  color: red;
   margin-top: 20px;
   font-weight: bold;
 }
@@ -1118,8 +1463,659 @@ window.addEventListener('resize', () => chartInstance && chartInstance.resize())
 }
 
 @keyframes error-shake {
-  0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(-10px); }
-  75% { transform: translateX(10px); }
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-10px);
+  }
+  75% {
+    transform: translateX(10px);
+  }
+}
+
+/* 修改或新增部分样式 */
+.combat-stage {
+  margin: 20px 0; /* 给舞台一点间距 */
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 20px;
+  padding: 10px;
+}
+
+.hero-body {
+  font-size: 50px; /* 调整小人大小 */
+  filter: drop-shadow(0 0 15px rgba(255, 255, 255, 0.3));
+}
+
+.hero-name {
+  color: white;
+  font-size: 14px;
+  margin-top: 5px;
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.red-text {
+  color: #ff4d4f;
+  text-shadow: 0 0 5px #ff4d4f;
+}
+.blue-text {
+  color: #1890ff;
+  text-shadow: 0 0 5px #1890ff;
+}
+
+/* 确保武器标签可读 */
+.weapon-label {
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.9);
+  color: #333;
+  padding: 0 6px;
+  border-radius: 10px;
+  font-weight: bold;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+/* 宝可梦对战场景 */
+.pokemon-battle-scene {
+  width: 100vw;
+  height: 100vh;
+  max-width: none !important;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  background: radial-gradient(circle at center, #4a4a8a 0%, #1a1a2e 100%);
+}
+
+.battle-arena {
+  width: 90%;
+  max-width: 1200px;
+  height: 60vh;
+  position: relative;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  perspective: 1000px;
+}
+
+/* 角色单元 */
+.battle-unit {
+  position: relative;
+  width: 300px;
+  transition: transform 0.2s;
+}
+
+/* 状态框 - 经典斜角样式 */
+.status-box {
+  background: #f8f8f8;
+  border: 4px solid #333;
+  border-radius: 0 20px 0 20px;
+  padding: 15px;
+  color: #333;
+  text-align: left;
+  box-shadow: 8px 8px 0 rgba(0, 0, 0, 0.3);
+  margin-bottom: 20px;
+}
+
+.trainer-name {
+  font-weight: bold;
+  font-size: 20px;
+  text-transform: uppercase;
+  margin-bottom: 5px;
+}
+
+.hp-bar-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #333;
+  padding: 4px 8px;
+  border-radius: 10px;
+}
+
+.hp-label {
+  color: #ffcb05;
+  font-weight: bold;
+  font-size: 12px;
+}
+.hp-bar {
+  flex: 1;
+  height: 10px;
+  background: #555;
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+.hp-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #51ff00, #9dff00);
+  transition: width 0.3s ease;
+}
+
+/* 角色与平台 */
+.character-sprite {
+  font-size: 120px;
+  filter: drop-shadow(0 0 20px rgba(255, 255, 255, 0.2));
+  z-index: 5;
+  position: relative;
+}
+
+.platform {
+  width: 250px;
+  height: 60px;
+  background: rgba(0, 0, 0, 0.4);
+  border-radius: 50%;
+  margin-top: -40px;
+  transform: rotateX(60deg);
+  border: 2px solid rgba(255, 255, 255, 0.2);
+}
+
+/* 受击震动效果 */
+.is-hit {
+  animation: hit-shake 0.2s ease-in-out infinite;
+}
+
+@keyframes hit-shake {
+  0% {
+    transform: translateX(0);
+    filter: brightness(1.5) contrast(1.5);
+  }
+  25% {
+    transform: translateX(-10px);
+  }
+  75% {
+    transform: translateX(10px);
+  }
+  100% {
+    transform: translateX(0);
+    filter: brightness(1);
+  }
+}
+
+/* 武器飞行轨道优化 */
+.trajectory-zone {
+  flex: 1;
+  position: relative;
+  height: 100%;
+}
+
+.weapon-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: white;
+  padding: 5px 12px;
+  border: 3px solid #333;
+  border-radius: 15px;
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.2);
+}
+
+.fly-to-blue {
+  left: 0;
+  bottom: 30%;
+  animation: move-to-blue 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+.fly-to-red {
+  right: 0;
+  top: 30%;
+  animation: move-to-red 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+@keyframes move-to-blue {
+  0% {
+    transform: translate(0, 0) scale(1) rotate(0deg);
+    opacity: 1;
+  }
+  50% {
+    transform: translate(300px, -150px) scale(1.2) rotate(180deg);
+  }
+  100% {
+    transform: translate(600px, -50px) scale(0.8) rotate(360deg);
+    opacity: 0;
+  }
+}
+
+@keyframes move-to-red {
+  0% {
+    transform: translate(0, 0) scale(1) rotate(0deg);
+    opacity: 1;
+  }
+  50% {
+    transform: translate(-300px, 150px) scale(1.2) rotate(-180deg);
+  }
+  100% {
+    transform: translate(-600px, 50px) scale(0.8) rotate(-360deg);
+    opacity: 0;
+  }
+}
+
+/* 底部对话框 */
+.pokemon-dialog {
+  width: 90%;
+  max-width: 1000px;
+  height: 120px;
+  background: #f8f8f8;
+  border: 6px double #333;
+  border-radius: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 40px;
+  box-sizing: border-box;
+}
+
+.dialog-text {
+  font-size: 28px;
+  color: #333;
+  font-weight: bold;
+  font-family: "Courier New", Courier, monospace;
+}
+
+.dialog-progress {
+  font-size: 24px;
+  color: #777;
+  font-family: "Courier New", monospace;
+}
+
+.typing-cursor {
+  animation: blink 0.8s infinite;
+  color: #ff4d4f;
+  margin-right: 10px;
+}
+
+@keyframes blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+
+.pixel-battle-theme {
+  --p-black: #000000;
+  --p-white: #ffffff;
+  --p-green: #51ff00;
+  --p-yellow: #faff00;
+  --p-bg: #2d2a4a;
+
+  background: var(--p-bg);
+  font-family: "Press Start 2P", cursive; /* 使用像素字体 */
+  image-rendering: pixelated;
+  z-index: 99999;
+}
+
+.pixel-stage {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background-image: linear-gradient(
+      rgba(255, 255, 255, 0.05) 1px,
+      transparent 1px
+    ),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* 布局：对角线分立 */
+.battle-ground {
+  width: 90%;
+  max-width: 1100px;
+  height: 70vh;
+  position: relative;
+}
+
+.pixel-unit {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  transition: all 0.2s steps(4);
+}
+
+/* 敌方在右上 */
+.opponent-side {
+  top: 5%;
+  right: 5%;
+  align-items: flex-end;
+}
+
+/* 我方在左下 */
+.player-side {
+  bottom: 10%;
+  left: 5%;
+  align-items: flex-start;
+}
+
+/* 像素状态栏 */
+.pixel-status-bar {
+  background: #f0f0d8; /* 复古掌机屏幕色 */
+  border: 4px solid var(--p-black);
+  padding: 10px;
+  width: 280px;
+  box-shadow: 6px 6px 0px rgba(0, 0, 0, 0.3);
+  margin-bottom: 15px;
+}
+
+.opponent-bar {
+  border-radius: 0 0 0 15px;
+}
+.player-bar {
+  border-radius: 15px 0 0 0;
+}
+
+.p-name {
+  color: #333;
+  font-size: 14px;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+
+.p-hp-container {
+  display: flex;
+  align-items: center;
+  background: #444;
+  padding: 3px;
+  border: 2px solid #000;
+}
+
+.p-hp-label {
+  color: var(--p-yellow);
+  font-size: 10px;
+  margin-right: 5px;
+}
+
+.p-hp-track {
+  flex: 1;
+  height: 10px;
+  background: #222;
+  position: relative;
+}
+
+.p-hp-fill {
+  height: 100%;
+  background: var(--p-green);
+  transition: width 0.5s steps(10);
+}
+
+.p-exp-row {
+  height: 4px;
+  background: #444;
+  margin-top: 5px;
+}
+
+.p-exp-fill {
+  height: 100%;
+  background: #0091ff;
+}
+
+/* 角色与地台 */
+.pixel-avatar {
+  font-size: 100px;
+  filter: drop-shadow(4px 4px 0px rgba(0, 0, 0, 0.2));
+  animation: pixel-float 1.5s steps(2) infinite alternate;
+}
+
+.player-back {
+  transform: scale(1.3);
+} /* 我方靠近镜头，稍大 */
+
+.pixel-base {
+  width: 220px;
+  height: 40px;
+  background: #6a8d6a; /* 草地绿 */
+  border-radius: 50%;
+  border: 4px solid #333;
+  margin-top: -30px;
+  transform: rotateX(60deg);
+}
+
+/* 轨道与投掷 */
+.pixel-trajectory {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.pixel-item-box {
+  background: white;
+  border: 3px solid #000;
+  padding: 5px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  box-shadow: 4px 4px 0 #000;
+}
+
+.p-text {
+  font-size: 10px;
+  color: #000;
+  font-family: "Press Start 2P";
+}
+
+/* 对角线抛物线动画 */
+.path-to-blue {
+  position: absolute;
+  left: 20%;
+  bottom: 30%;
+  animation: diagonal-up 1s steps(12) forwards;
+}
+
+.path-to-red {
+  position: absolute;
+  right: 20%;
+  top: 30%;
+  animation: diagonal-down 1s steps(12) forwards;
+}
+
+@keyframes diagonal-up {
+  0% {
+    transform: translate(0, 0) rotate(0deg);
+    opacity: 1;
+  }
+  50% {
+    transform: translate(250px, -150px) rotate(180deg);
+  }
+  100% {
+    transform: translate(500px, -300px) rotate(360deg);
+    opacity: 0;
+  }
+}
+
+@keyframes diagonal-down {
+  0% {
+    transform: translate(0, 0) rotate(0deg);
+    opacity: 1;
+  }
+  50% {
+    transform: translate(-250px, 150px) rotate(-180deg);
+  }
+  100% {
+    transform: translate(-500px, 300px) rotate(-360deg);
+    opacity: 0;
+  }
+}
+
+/* 底部消息框 */
+.pixel-message-box {
+  width: 90%;
+  max-width: 900px;
+  height: 110px;
+  background: #333;
+  border: 6px solid #f8f8f8;
+  outline: 6px solid #333; /* 经典双层边框 */
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 40px;
+}
+
+.message-content {
+  color: white;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  line-height: 1.5;
+}
+
+.pixel-cursor {
+  width: 0;
+  height: 0;
+  border-left: 12px solid transparent;
+  border-right: 12px solid transparent;
+  border-top: 18px solid var(--p-green);
+  margin-right: 20px;
+  animation: cursor-bounce 0.6s steps(2) infinite;
+}
+
+.message-percent {
+  color: #888;
+  font-size: 14px;
+}
+
+/* 受击闪烁 */
+.is-hit {
+  animation: pixel-shake 0.3s steps(2) infinite;
+}
+
+@keyframes pixel-shake {
+  0% {
+    transform: translate(4px, 4px);
+    filter: brightness(2);
+  }
+  50% {
+    transform: translate(-4px, -4px);
+    opacity: 0.5;
+  }
+  100% {
+    transform: translate(0);
+    filter: brightness(1);
+  }
+}
+
+@keyframes pixel-float {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes cursor-bounce {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(8px);
+  }
+}
+
+/* --- 布局与舞台 --- */
+.battle-ground {
+  position: relative;
+  width: 100%;
+  height: 60vh;
+  background: radial-gradient(circle at center, #5a8d5a 0%, #2d2a4a 70%); /* 模拟草地中心 */
+  border: 8px solid #333;
+  overflow: hidden;
+}
+
+/* --- 属性武器动画 --- */
+.trajectory-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 10;
+}
+
+.flying-weapon {
+  position: absolute;
+  padding: 6px 12px;
+  background: white;
+  border: 3px solid #000;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  box-shadow: 4px 4px 0 rgba(0,0,0,0.3);
+}
+
+.weapon-content {
+  display: flex;
+  align-items: center;
+  font-family: "Press Start 2P", cursive;
+  font-size: 10px;
+}
+
+/* 向右扔 (我方 -> 敌方) */
+.throw-right {
+  left: 20%;
+  animation: arc-right 1.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+/* 向左扔 (敌方 -> 我方) */
+.throw-left {
+  right: 20%;
+  animation: arc-left 1.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes arc-right {
+  0% { transform: translate(0, 0) scale(0.5); opacity: 0; }
+  20% { opacity: 1; transform: scale(1.2); }
+  100% { transform: translate(500px, -200px) scale(0.8); opacity: 0; }
+}
+
+@keyframes arc-left {
+  0% { transform: translate(0, 0) scale(0.5); opacity: 0; }
+  20% { opacity: 1; transform: scale(1.2); }
+  100% { transform: translate(-500px, 200px) scale(0.8); opacity: 0; }
+}
+
+/* --- 状态栏美化 --- */
+.p-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 5px;
+}
+
+.p-lv { color: #f3a712; font-size: 10px; }
+
+.p-hp-track {
+  border: 2px solid #000;
+  background: #555;
+}
+
+.p-hp-fill {
+  transition: width 0.3s steps(10); /* 像素级掉血感 */
+}
+
+/* --- 受击闪烁 --- */
+.is-hit {
+  animation: hit-flash 0.15s ease-in-out infinite;
+}
+
+@keyframes hit-flash {
+  0% { filter: brightness(1); transform: translateX(0); }
+  50% { filter: brightness(3) contrast(2); transform: translateX(10px); }
+  100% { filter: brightness(1); transform: translateX(-10px); }
+}
+
+/* --- 地台 --- */
+.pixel-base {
+  width: 200px;
+  height: 40px;
+  background: rgba(0,0,0,0.2);
+  border-radius: 50%;
+  margin: -20px auto 0;
+  transform: rotateX(60deg);
+  border: 2px dashed rgba(255,255,255,0.3);
 }
 </style>
