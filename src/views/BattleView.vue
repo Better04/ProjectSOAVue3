@@ -916,12 +916,17 @@ window.addEventListener(
   display: inline-block;
   font-size: 2.5em;
   font-weight: bold;
+  /* 这里的渐变颜色现在是固定的 */
   background: linear-gradient(45deg, #ff4d4f, #ffa940, #1890ff, #722ed1);
-  background-size: 300% 300%;
+  background-size: 100% 100%; /* 将背景尺寸设为 100% 填满 */
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  animation: gradient-shift 3s ease infinite;
-  text-shadow: 0 0 30px rgba(255, 77, 79, 0.5);
+  
+  /* 1. 删除下面这一行动画引用 */
+  /* animation: gradient-shift 3s ease infinite; */
+  
+  /* 2. 保留发光效果（如果需要也可以调整颜色） */
+  text-shadow: 0 0 20px rgba(255, 77, 79, 0.3);
 }
 
 @keyframes gradient-shift {
@@ -938,7 +943,7 @@ window.addEventListener(
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 20px;
+  gap: 100px;
   margin-bottom: 30px;
   position: relative;
   z-index: 1;
@@ -946,7 +951,6 @@ window.addEventListener(
 
 .player-input {
   position: relative;
-  animation: float 3s ease-in-out infinite;
 }
 
 .player-input.red-side {
@@ -1039,7 +1043,6 @@ window.addEventListener(
   color: #333;
   position: relative;
   z-index: 2;
-  animation: vs-shake 0.5s ease-in-out infinite alternate;
   text-shadow: 2px 2px 0 #ff4d4f, -2px -2px 0 #1890ff;
 }
 
