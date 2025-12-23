@@ -42,9 +42,9 @@ const blueIsHit = ref(false);
 const throwAttribute = (side) => {
   const attr = attributes[Math.floor(Math.random() * attributes.length)];
   const id = Date.now() + Math.random();
-  
+
   // 随机抛物线高度
-  const offset = Math.floor(Math.random() * 60) - 30; 
+  const offset = Math.floor(Math.random() * 60) - 30;
 
   flyingItems.value.push({
     id,
@@ -278,58 +278,76 @@ window.addEventListener(
       <div class="pixel-stage">
 
         <div class="battle-ground">
-  <div class="pixel-unit opponent-side" :class="{ 'is-hit': blueIsHit }">
-    <div class="pixel-status-bar opponent-bar">
-      <div class="p-header">
-        <span class="p-name">{{ player2 || 'UNKNOWN' }}</span>
-        <span class="p-lv">Lv.99</span>
-      </div>
-      <div class="p-hp-container">
-        <span class="p-hp-label">HP</span>
-        <div class="p-hp-track">
-          <div class="p-hp-fill" :style="{ width: (100 - analysisProgress) + '%' }"></div>
-        </div>
-      </div>
-    </div>
-    <div class="pixel-sprite-wrap">
-      <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-v/black-white/animated/1.gif" class="pixel-avatar" />
-      <div class="pixel-base"></div>
-    </div>
-  </div>
+          <div
+            class="pixel-unit opponent-side"
+            :class="{ 'is-hit': blueIsHit }"
+          >
+            <div class="pixel-status-bar opponent-bar">
+              <div class="p-header">
+                <span class="p-name">{{ player2 || 'UNKNOWN' }}</span>
+                <span class="p-lv">Lv.99</span>
+              </div>
+              <div class="p-hp-container">
+                <span class="p-hp-label">HP</span>
+                <div class="p-hp-track">
+                  <div
+                    class="p-hp-fill"
+                    :style="{ width: (100 - analysisProgress) + '%' }"
+                  ></div>
+                </div>
+              </div>
+            </div>
+            <div class="pixel-sprite-wrap">
+              <img
+                src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-v/black-white/animated/1.gif"
+                class="pixel-avatar"
+              />
+              <div class="pixel-base"></div>
+            </div>
+          </div>
 
-  <div class="trajectory-layer">
-    <div 
-      v-for="item in flyingItems" 
-      :key="item.id"
-      :class="['flying-weapon', item.side === 'red' ? 'throw-right' : 'throw-left']"
-      :style="{ top: (50 + item.offset) + '%' }"
-    >
-      <div class="weapon-content">
-        <span class="w-icon">{{ item.icon }}</span>
-        <span class="w-label">{{ item.label }}</span>
-      </div>
-    </div>
-  </div>
+          <div class="trajectory-layer">
+            <div
+              v-for="item in flyingItems"
+              :key="item.id"
+              :class="['flying-weapon', item.side === 'red' ? 'throw-right' : 'throw-left']"
+              :style="{ top: (50 + item.offset) + '%' }"
+            >
+              <div class="weapon-content">
+                <span class="w-icon">{{ item.icon }}</span>
+                <span class="w-label">{{ item.label }}</span>
+              </div>
+            </div>
+          </div>
 
-  <div class="pixel-unit player-side" :class="{ 'is-hit': redIsHit }">
-    <div class="pixel-sprite-wrap">
-      <img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-v/black-white/animated/back/4.gif" class="pixel-avatar player-back" />
-      <div class="pixel-base"></div>
-    </div>
-    <div class="pixel-status-bar player-bar">
-      <div class="p-header">
-        <span class="p-name">{{ player1 || 'YOU' }}</span>
-        <span class="p-lv">Lv.99</span>
-      </div>
-      <div class="p-hp-container">
-        <span class="p-hp-label">HP</span>
-        <div class="p-hp-track">
-          <div class="p-hp-fill" :style="{ width: (analysisProgress) + '%' }"></div>
+          <div
+            class="pixel-unit player-side"
+            :class="{ 'is-hit': redIsHit }"
+          >
+            <div class="pixel-sprite-wrap">
+              <img
+                src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/versions/generation-v/black-white/animated/back/4.gif"
+                class="pixel-avatar player-back"
+              />
+              <div class="pixel-base"></div>
+            </div>
+            <div class="pixel-status-bar player-bar">
+              <div class="p-header">
+                <span class="p-name">{{ player1 || 'YOU' }}</span>
+                <span class="p-lv">Lv.99</span>
+              </div>
+              <div class="p-hp-container">
+                <span class="p-hp-label">HP</span>
+                <div class="p-hp-track">
+                  <div
+                    class="p-hp-fill"
+                    :style="{ width: (analysisProgress) + '%' }"
+                  ></div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
-  </div>
-</div>
 
         <div class="pixel-message-box">
           <div class="message-content">
@@ -1858,14 +1876,19 @@ window.addEventListener(
 
 /* 角色与地台 */
 .pixel-avatar {
-  font-size: 100px;
-  filter: drop-shadow(4px 4px 0px rgba(0, 0, 0, 0.2));
+  font-size: 200px;
+  filter: drop-shadow(5px 5px 0px rgba(0, 0, 0, 0.25));
   animation: pixel-float 1.5s steps(2) infinite alternate;
 }
 
 .player-back {
-  transform: scale(1.3);
+  transform: scale(2);
 } /* 我方靠近镜头，稍大 */
+
+.w-icon {
+  font-size: 28px;
+  transform: scale(1.1);
+}
 
 .pixel-base {
   width: 220px;
@@ -2023,7 +2046,11 @@ window.addEventListener(
   position: relative;
   width: 100%;
   height: 60vh;
-  background: radial-gradient(circle at center, #5a8d5a 0%, #2d2a4a 70%); /* 模拟草地中心 */
+  background: radial-gradient(
+    circle at center,
+    #5a8d5a 0%,
+    #2d2a4a 70%
+  ); /* 模拟草地中心 */
   border: 8px solid #333;
   overflow: hidden;
 }
@@ -2045,7 +2072,7 @@ window.addEventListener(
   display: flex;
   align-items: center;
   gap: 5px;
-  box-shadow: 4px 4px 0 rgba(0,0,0,0.3);
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.3);
 }
 
 .weapon-content {
@@ -2068,15 +2095,33 @@ window.addEventListener(
 }
 
 @keyframes arc-right {
-  0% { transform: translate(0, 0) scale(0.5); opacity: 0; }
-  20% { opacity: 1; transform: scale(1.2); }
-  100% { transform: translate(500px, -200px) scale(0.8); opacity: 0; }
+  0% {
+    transform: translate(0, 0) scale(0.5);
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+  100% {
+    transform: translate(500px, -200px) scale(0.8);
+    opacity: 0;
+  }
 }
 
 @keyframes arc-left {
-  0% { transform: translate(0, 0) scale(0.5); opacity: 0; }
-  20% { opacity: 1; transform: scale(1.2); }
-  100% { transform: translate(-500px, 200px) scale(0.8); opacity: 0; }
+  0% {
+    transform: translate(0, 0) scale(0.5);
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+    transform: scale(1.2);
+  }
+  100% {
+    transform: translate(-500px, 200px) scale(0.8);
+    opacity: 0;
+  }
 }
 
 /* --- 状态栏美化 --- */
@@ -2086,7 +2131,10 @@ window.addEventListener(
   margin-bottom: 5px;
 }
 
-.p-lv { color: #f3a712; font-size: 10px; }
+.p-lv {
+  color: #f3a712;
+  font-size: 10px;
+}
 
 .p-hp-track {
   border: 2px solid #000;
@@ -2103,19 +2151,63 @@ window.addEventListener(
 }
 
 @keyframes hit-flash {
-  0% { filter: brightness(1); transform: translateX(0); }
-  50% { filter: brightness(3) contrast(2); transform: translateX(10px); }
-  100% { filter: brightness(1); transform: translateX(-10px); }
+  0% {
+    filter: brightness(1);
+    transform: translateX(0);
+  }
+  50% {
+    filter: brightness(3) contrast(2);
+    transform: translateX(10px);
+  }
+  100% {
+    filter: brightness(1);
+    transform: translateX(-10px);
+  }
 }
 
 /* --- 地台 --- */
 .pixel-base {
   width: 200px;
   height: 40px;
-  background: rgba(0,0,0,0.2);
+  background: rgba(0, 0, 0, 0.2);
   border-radius: 50%;
   margin: -20px auto 0;
   transform: rotateX(60deg);
-  border: 2px dashed rgba(255,255,255,0.3);
+  border: 2px dashed rgba(255, 255, 255, 0.3);
+}
+
+/* 1️⃣ 如果是 img */
+:deep(img.pixel-avatar),
+:deep(.pixel-avatar img) {
+  width: 160px !important;
+  height: auto !important;
+  image-rendering: pixelated;
+}
+
+/* 2️⃣ 如果是 span / div（emoji 或字符） */
+:deep(.pixel-avatar) {
+  font-size: 160px !important;
+  line-height: 1;
+}
+
+/* 3️⃣ 如果是背景图 */
+:deep(.pixel-avatar) {
+  background-size: contain !important;
+}
+
+/* emoji / 文字 */
+:deep(.w-icon) {
+  font-size: 32px !important;
+}
+
+/* 如果是 img */
+:deep(.w-icon img) {
+  width: 32px !important;
+  height: 32px !important;
+}
+
+/* 整个卡片一起放大（兜底） */
+:deep(.w-item) {
+  transform: scale(1.15);
 }
 </style>
