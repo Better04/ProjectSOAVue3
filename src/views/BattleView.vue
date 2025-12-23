@@ -25,6 +25,20 @@ const attributes = [
   { label: "积分", icon: "💎" },
 ];
 
+// 在你的 ref 定义区域添加以下数据
+const topCoders = ref([
+  { name: "torvalds", avatar: "https://github.com/torvalds.png", rankTitle: "代码之神", rankClass: "god", score: 9999, winRate: 98 },
+  { name: "yyx990803", avatar: "https://github.com/yyx990803.png", rankTitle: "架构大师", rankClass: "master", score: 8850, winRate: 92 },
+  { name: "gaearon", avatar: "https://github.com/gaearon.png", rankTitle: "架构大师", rankClass: "master", score: 8720, winRate: 89 },
+  { name: "tj", avatar: "https://github.com/tj.png", rankTitle: "全栈专家", rankClass: "pro", score: 8560, winRate: 95 },
+  { name: "ant-fu", avatar: "https://github.com/antfu.png", rankTitle: "开源劳模", rankClass: "pro", score: 8400, winRate: 91 },
+  { name: "ry", avatar: "https://github.com/ry.png", rankTitle: "内核专家", rankClass: "pro", score: 8300, winRate: 88 },
+  { name: "DHH", avatar: "https://github.com/dhh.png", rankTitle: "优雅大师", rankClass: "master", score: 8150, winRate: 85 },
+  { name: "addyosmani", avatar: "https://github.com/addyosmani.png", rankTitle: "性能专家", rankClass: "pro", score: 7900, winRate: 87 },
+  { name: "wesbos", avatar: "https://github.com/wesbos.png", rankTitle: "教育先行者", rankClass: "pro", score: 7600, winRate: 84 },
+  { name: "kentcdodds", avatar: "https://github.com/kentcdodds.png", rankTitle: "测试专家", rankClass: "pro", score: 7450, winRate: 82 }
+]);
+
 // 图表实例
 let chartInstance = null;
 const chartRef = ref(null);
@@ -269,7 +283,7 @@ window.addEventListener(
       class="battle-flash"
       :class="{ active: showBattleFlash }"
     ></div>
-
+    
     <!-- AI 分析全屏遮罩 -->
     <div
       v-if="loading"
@@ -539,6 +553,46 @@ window.addEventListener(
       </div>
 
     </div>
+
+        <div class="arena-footer-rankings">
+      <div class="ranking-inner-container">
+        <div class="ranking-header">
+          <h3 class="ranking-title">🏆 全球战力荣誉殿堂 (Global Hall of Fame)</h3>
+          <div class="ranking-stats">总计对决: 45,902 | 活跃选手: 1,240</div>
+        </div>
+
+        <div class="ranking-table-wrapper">
+          <table class="full-width-table">
+            <thead>
+              <tr>
+                <th>排名</th>
+                <th>选手 (CODER)</th>
+                <th>阶位</th>
+                <th>战力 (POWER)</th>
+                <th>胜率</th>
+                <th>状态</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="(coder, index) in topCoders" :key="index">
+                <td class="rank-id">{{ index + 1 }}</td>
+                <td class="coder-cell">
+                  <img :src="coder.avatar" class="table-avatar">
+                  <span class="coder-name">{{ coder.name }}</span>
+                </td>
+                <td><span :class="['class-tag', coder.rankClass]">{{ coder.rankTitle }}</span></td>
+                <td class="power-val">{{ coder.score }}</td>
+                <td class="rate-cell">
+                  <div class="rate-bar-bg"><div class="rate-bar-fill" :style="{ width: coder.winRate + '%' }"></div></div>
+                  <span class="rate-num">{{ coder.winRate }}%</span>
+                </td>
+                <td class="status-online">● Online</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -546,13 +600,23 @@ window.addEventListener(
 @import url("https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap");
 
 .battle-container {
+  width: 100%;
+  max-width: none; /* 解除之前的 1000px 限制 */
+  margin: 0;
+  padding: 0;
+  text-align: center;
+  position: relative;
+  /* 解决太白：增加一个非常淡的底纹背景 */
+  background-color: #ffffff;
+  background-image: radial-gradient(#f0f0f0 1px, transparent 1px);
+  background-size: 30px 30px;
+}
+
+/* 包装层：让对战内容依然保持在中间 1000px */
+.main-content-wrapper {
   max-width: 1000px;
   margin: 0 auto;
-  padding: 20px;
-  text-align: center;
-  font-family: "Arial", sans-serif;
-  position: relative;
-  overflow: hidden;
+  padding: 40px 20px;
 }
 
 /* ============ AI 分析遮罩层 ============ */
@@ -2213,4 +2277,85 @@ window.addEventListener(
 :deep(.w-item) {
   transform: scale(1.15);
 }
+
+/* --- 全屏荣誉殿堂 --- */
+.arena-footer-rankings {
+  width: 100%; /* 占据整个屏幕宽度 */
+  background: #f6f8fa; /* GitHub 风格的浅灰色背景 */
+  border-top: 1px solid #d0d7de;
+  padding: 60px 0;
+  margin-top: 40px;
+}
+
+.ranking-inner-container {
+  max-width: 1100px; /* 内容依然保持合适的阅读宽度 */
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+.ranking-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: 20px;
+  border-bottom: 2px solid #24292f;
+  padding-bottom: 10px;
+}
+
+.ranking-title {
+  font-size: 22px;
+  margin: 0;
+  color: #24292f;
+}
+
+.ranking-stats {
+  font-size: 13px;
+  color: #57606a;
+  font-family: monospace;
+}
+
+/* 表格专业化 */
+.ranking-table-wrapper {
+  background: white;
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+}
+
+.full-width-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.full-width-table th {
+  background: #f6f8fa;
+  padding: 15px;
+  font-size: 12px;
+  color: #57606a;
+}
+
+.full-width-table td {
+  padding: 14px 15px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+/* 装饰细节 */
+.table-avatar { width: 30px; height: 30px; border-radius: 4px; vertical-align: middle; margin-right: 10px; }
+.coder-name { font-weight: 600; color: #0969da; }
+.power-val { font-family: monospace; font-weight: bold; color: #cf222e; }
+
+.class-tag {
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: bold;
+}
+.class-tag.god { background: #fff8c5; color: #9a6700; border: 1px solid #d4a72c; }
+.class-tag.master { background: #ddf4ff; color: #0969da; }
+
+.rate-bar-bg { width: 80px; height: 6px; background: #eee; border-radius: 3px; display: inline-block; margin-right: 8px; }
+.rate-bar-fill { height: 100%; background: #2da44e; border-radius: 3px; }
+.status-online { color: #2da44e; font-size: 12px; font-weight: bold; }
 </style>
