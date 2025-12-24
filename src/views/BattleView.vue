@@ -2280,47 +2280,74 @@ window.addEventListener(
 
 /* --- 全屏荣誉殿堂 --- */
 .arena-footer-rankings {
-  width: 100%; /* 占据整个屏幕宽度 */
-  background: #f6f8fa; /* GitHub 风格的浅灰色背景 */
-  border-top: 1px solid #d0d7de;
-  padding: 60px 0;
-  margin-top: 40px;
+  width: 100%;
+  /* 1. 下移：增加 margin-top 从 40px 到 120px，并增加渐变背景过渡 */
+  margin-top: 120px; 
+  padding: 100px 0;
+  background: linear-gradient(to bottom, #ffffff, #f0f2f5, #e6e9ef);
+  border-top: 1px solid rgba(0,0,0,0.05);
+  position: relative;
+}
+
+/* 装饰性背景：增加一个半透明的大图标背景 */
+.arena-footer-rankings::before {
+  content: "RANKING";
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 120px;
+  font-weight: 900;
+  color: rgba(0, 0, 0, 0.03);
+  z-index: 0;
+  pointer-events: none;
 }
 
 .ranking-inner-container {
-  max-width: 1100px; /* 内容依然保持合适的阅读宽度 */
+  max-width: 1100px;
   margin: 0 auto;
   padding: 0 20px;
+  position: relative;
+  z-index: 1;
 }
 
 .ranking-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-end;
-  margin-bottom: 20px;
-  border-bottom: 2px solid #24292f;
-  padding-bottom: 10px;
+  align-items: center;
+  margin-bottom: 30px;
+  padding: 0 10px;
 }
 
 .ranking-title {
-  font-size: 22px;
-  margin: 0;
-  color: #24292f;
+  font-size: 26px;
+  font-weight: 800;
+  background: linear-gradient(45deg, #24292f, #57606a);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .ranking-stats {
-  font-size: 13px;
-  color: #57606a;
-  font-family: monospace;
+  font-size: 14px;
+  color: #8c959f;
+  background: rgba(255, 255, 255, 0.6);
+  padding: 6px 15px;
+  border-radius: 20px;
+  border: 1px solid rgba(0,0,0,0.05);
 }
 
-/* 表格专业化 */
+/* 表格容器：改为圆角卡片流光效果 */
 .ranking-table-wrapper {
-  background: white;
-  border: 1px solid #d0d7de;
-  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 24px;
   overflow: hidden;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.06), 
+              0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .full-width-table {
@@ -2330,32 +2357,106 @@ window.addEventListener(
 }
 
 .full-width-table th {
-  background: #f6f8fa;
-  padding: 15px;
-  font-size: 12px;
+  background: rgba(246, 248, 250, 0.5);
+  padding: 20px;
+  font-size: 13px;
   color: #57606a;
+  text-transform: uppercase;
+  letter-spacing: 1px;
 }
 
 .full-width-table td {
-  padding: 14px 15px;
-  border-bottom: 1px solid #f0f0f0;
+  padding: 18px 20px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.03);
+  transition: all 0.3s ease;
 }
 
-/* 装饰细节 */
-.table-avatar { width: 30px; height: 30px; border-radius: 4px; vertical-align: middle; margin-right: 10px; }
-.coder-name { font-weight: 600; color: #0969da; }
-.power-val { font-family: monospace; font-weight: bold; color: #cf222e; }
+/* 行悬停特效 */
+.full-width-table tbody tr {
+  transition: transform 0.2s ease, background-color 0.2s ease;
+}
 
-.class-tag {
-  padding: 2px 8px;
+.full-width-table tbody tr:hover {
+  background-color: rgba(255, 255, 255, 1);
+  transform: scale(1.01) translateY(-2px);
+  box-shadow: 0 10px 20px rgba(0,0,0,0.03);
+  z-index: 10;
+}
+
+/* 排名数字美化 */
+.rank-id {
+  font-family: 'Press Start 2P', cursive;
+  font-size: 14px;
+  color: #8c959f;
+}
+
+/* 前三名特殊颜色 */
+tbody tr:nth-child(1) .rank-id { color: #ffca28; font-size: 18px; } /* 金 */
+tbody tr:nth-child(2) .rank-id { color: #b0bec5; font-size: 16px; } /* 银 */
+tbody tr:nth-child(3) .rank-id { color: #bcaaa4; font-size: 15px; } /* 铜 */
+
+.table-avatar {
+  width: 36px;
+  height: 36px;
   border-radius: 10px;
-  font-size: 11px;
-  font-weight: bold;
+  margin-right: 12px;
+  border: 2px solid #fff;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
-.class-tag.god { background: #fff8c5; color: #9a6700; border: 1px solid #d4a72c; }
-.class-tag.master { background: #ddf4ff; color: #0969da; }
 
-.rate-bar-bg { width: 80px; height: 6px; background: #eee; border-radius: 3px; display: inline-block; margin-right: 8px; }
-.rate-bar-fill { height: 100%; background: #2da44e; border-radius: 3px; }
-.status-online { color: #2da44e; font-size: 12px; font-weight: bold; }
+.coder-name {
+  font-weight: 700;
+  color: #1a1d21;
+}
+
+.power-val {
+  font-family: 'Courier New', Courier, monospace;
+  font-weight: 900;
+  color: #ff4d4f;
+  font-size: 16px;
+}
+
+/* 胜率进度条美化 */
+.rate-cell {
+  min-width: 140px;
+}
+.rate-bar-bg {
+  width: 100px;
+  height: 8px;
+  background: #e1e4e8;
+  border-radius: 4px;
+  overflow: hidden;
+  display: inline-block;
+  vertical-align: middle;
+}
+.rate-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #1890ff, #52c41a);
+  border-radius: 4px;
+}
+
+.rate-num {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: bold;
+  color: #57606a;
+}
+
+/* 身份标签 */
+.class-tag {
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 11px;
+}
+.class-tag.god { 
+  background: #fffbe6; 
+  color: #d48806; 
+  border: 1px solid #ffe58f;
+  box-shadow: 0 0 10px rgba(255, 229, 143, 0.4);
+}
+.class-tag.master { 
+  background: #e6f7ff; 
+  color: #1890ff; 
+  border: 1px solid #91d5ff; 
+}
 </style>
